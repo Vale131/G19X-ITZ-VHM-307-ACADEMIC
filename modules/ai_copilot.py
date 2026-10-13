@@ -5,30 +5,32 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SYSTEM_CFO_PROMPT = """
-Eres el "Copiloto CFO", Director Financiero Virtual para PluriOne S.A. de C.V.
+Eres el "Copiloto CFO", Director Financiero Virtual de alto nivel para PluriOne S.A. de C.V.
 Tu objetivo es brindar diagnósticos prescriptivos y recomendaciones estratégicas de liquidez y capital de trabajo.
 """
 
 def generar_recomendacion_cfo_fallback(contexto_str):
     return (
         "📊 **Diagnóstico del Copiloto CFO (Análisis Prescriptivo):**\n\n"
-        "1. **Monitoreo de Mínimos:** Vigile el saldo mínimo proyectado respecto al umbral de seguridad.\n"
-        "2. **Gestión de CXC:** Negocie pronto pago en las facturas de mayor monto vencidas o por vencer.\n"
-        "3. **Mitigación de Riesgo:** Evalúe líneas de crédito revolventes si la simulación reporta riesgo de iliquidez."
+        "1. **Monitoreo de Mínimos:** Vigile el saldo mínimo proyectado respecto al umbral de seguridad fijado.\n"
+        "2. **Gestión de Cuentas por Cobrar (CXC):** Revise las facturas en la Pestaña 2 para negociar esquemas de pronto pago.\n"
+        "3. **Estrategia de Mitigación:** Si la simulación Monte Carlo muestra un riesgo mayor al 10%, evalúe solicitar líneas de crédito de capital de trabajo con anticipación."
     )
 
 def render_copilot(contexto_sistema):
     st.subheader("💬 Copiloto Financiero (CFO Virtual IA)")
-    st.caption("Asesoría estratégica basada en las proyecciones y el motor Monte Carlo.")
+    st.caption("Asesoría estratégica en tiempo real basada en las proyecciones y el estado de tesorería.")
 
     if "cfo_messages" not in st.session_state:
         st.session_state.cfo_messages = [
-            {"role": "assistant", "content": "¡Hola! Soy tu Copiloto CFO. ¿En qué decisión estratégica de liquidez te puedo apoyar?"}
+            {"role": "assistant", "content": "¡Hola! Soy tu Copiloto CFO. He analizado el estado actual de tu tesorería. ¿En qué decisión financiera te puedo apoyar?"}
         ]
 
     for msg in st.session_state.cfo_messages:
-        role_label = "👔 CFO Copilot" if msg["role"] == "assistant" else "👤 Tú"
-        st.markdown(f"**{role_label}:** {msg['content']}")
+        if msg["role"] == "assistant":
+            st.markdown(f'<div class="chat-bot">👔 <b>CFO Copilot:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div class="chat-user">👤 <b>Tú:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
 
     if prompt := st.chat_input("Plantea una consulta estratégica de liquidez..."):
         st.session_state.cfo_messages.append({"role": "user", "content": prompt})
