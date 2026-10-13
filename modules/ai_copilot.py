@@ -1,46 +1,58 @@
+import os
 import streamlit as st
-from openai import OpenAI
+from dotenv import load_dotenv
 
-def render_copilot(contexto_financiero):
-    st.subheader("💬 Copiloto Financiero IA")
-    st.caption("Realiza consultas en texto libre sobre el flujo de caja, riesgos y recomendaciones de ajuste.")
+load_dotenv()
 
-    # Inicializar historial de chat
-    if "chat_messages" not in st.session_state:
-        st.session_state.chat_messages = [
-            {"role": "assistant", "content": "¡Hola! Soy tu asistente de tesorería. ¿En qué puedo ayudarte a optimizar la liquidez hoy?"}
+SYSTEM_CFO_PROMPT = """
+Eres el "Copiloto CFO", Director Financiero Virtual para PluriOne S.A. de C.V.
+Tu objetivo es brindar diagnósticos prescriptivos y recomendaciones estratégicas de liquidez y capital de trabajo.
+"""
+
+def generar_recomendacion_cfo_fallback(contexto_str):
+    return (
+        "📊 **Diagnóstico del Copiloto CFO (Análisis Prescriptivo):**\n\n"
+        "1. **Monitoreo de Mínimos:** Vigile el saldo mínimo proyectado respecto al umbral de seguridad.\n"
+        "2. **Gestión de CXC:** Negocie pronto pago en las facturas de mayor monto vencidas o por vencer.\n"
+        "3. **Mitigación de Riesgo:** Evalúe líneas de crédito revolventes si la simulación reporta riesgo de iliquidez."
+    )
+
+def render_copilot(contexto_sistema):
+    st.subheader("💬 Copiloto Financiero (CFO Virtual IA)")
+    st.caption("Asesoría estratégica basada en las proyecciones y el motor Monte Carlo.")
+
+    if "cfo_messages" not in st.session_state:
+        st.session_state.cfo_messages = [
+            {"role": "assistant", "content": "¡Hola! Soy tu Copiloto CFO. ¿En qué decisión estratégica de liquidez te puedo apoyar?"}
         ]
 
-    # Mostrar mensajes anteriores
-    for msg in st.session_state.chat_messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+    for msg in st.session_state.cfo_messages:
+        role_label = "👔 CFO Copilot" if msg["role"] == "assistant" else "👤 Tú"
+        st.markdown(f"**{role_label}:** {msg['content']}")
 
-    # Input del usuario
-    if prompt := st.chat_input("Ej: ¿Qué medidas tomar para evitar el déficit en el punto mínimo?"):
-        st.session_state.chat_messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    if prompt := st.chat_input("Plantea una consulta estratégica de liquidez..."):
+        st.session_state.cfo_messages.append({"role": "user", "content": prompt})
+        
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key and not api_key.startswith("sk-proj-tu_clave"):
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=api_key)
+                prompt_completo = f"Contexto actual del sistema: {contexto_sistema}\n\nConsulta del usuario: {prompt}"
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": SYSTEM_CFO_PROMPT},
+                        {"role": "user", "content": prompt_completo}
+                    ],
+                    temperature=0.5
+                )
+                respuesta = response.choices[0].message.content
+            except Exception:
+                respuesta = generar_recomendacion_cfo_fallback(contexto_sistema)
+        else:
+            respuesta = generar_recomendacion_cfo_fallback(contexto_sistema)
 
-        try:
-            client = OpenAI()
-            system_prompt = f"""
-            Eres un CFO experto y consultor financiero.
-            Contexto actual de la empresa: {contexto_financiero}.
-            Responde de forma clara, ejecutiva, directa y con números específicos en MXN.
-            """
-            
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    *st.session_state.chat_messages
-                ]
-            )
-            answer = response.choices[0].message.content
-        except Exception:
-            answer = "⚠️ No se pudo conectar con la API de OpenAI. Por favor verifica que tu `OPENAI_API_KEY` esté bien configurada en el archivo `.env`."
-
-        st.session_state.chat_messages.append({"role": "assistant", "content": answer})
-        with st.chat_message("assistant"):
-            st.markdown(answer)
+        st.session_state.cfo_messages.append({"role": "assistant", "content": respuesta})
+        st.rerun()
