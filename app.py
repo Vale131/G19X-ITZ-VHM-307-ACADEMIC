@@ -4,12 +4,14 @@ import numpy as np
 import os
 from dotenv import load_dotenv
 
-from modules.risk import ejecutar_simulacion_monte_carlo, crear_grafica_monte_carlo
-from modules.database import init_db, guardar_historico_db, obtener_historico_db
+from modules.database import init_db, guardar_historico_db, obtener_historico_db, obtener_cartera_db
 from modules.forecasting import generar_pronostico_real, crear_grafica_escenarios, crear_grafica_saldos_area
 from modules.cxc_cxp import render_modulo_cartera
+from modules.risk import ejecutar_simulacion_monte_carlo, crear_grafica_monte_carlo
 from modules.support_agent import responder_soporte_fallback
 from modules.ai_copilot import render_copilot
+from modules.auth import render_login
+from modules.reports import generar_reporte_excel
 
 load_dotenv()
 init_db()
@@ -21,7 +23,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Estilos CSS Executivos
+# Estilos CSS
 st.markdown("""
 <style>
     .stApp { background-color: #F8FAFC; color: #0F172A; font-family: 'Inter', sans-serif; }
@@ -65,161 +67,198 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Topbar Header
-st.markdown("""
-<div class="topbar">
-    <div class="brand-logo">💼 PluriOne Liquidity Intelligence <span style="font-size:0.75rem; color:#64748B; font-weight:500;">v5.5 Motor Predictivo Real</span></div>
-    <div><span class="status-badge">● Engine SQLite & Stat-Model Activo</span></div>
-</div>
-""", unsafe_allow_html=True)
+# -----------------------------------------------------------------------------
+# CONTROL DE AUTENTICACIÓN Y SESIÓN
+# -----------------------------------------------------------------------------
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
 
-# Carga de Datos y Estado
-df_historico_db = obtener_historico_db()
+if not st.session_state["authenticated"]:
+    render_login()
+else:
+    # -------------------------------------------------------------------------
+    # DASHBOARD PRINCIPAL (SÓLO USUARIOS AUTENTICADOS)
+    # -------------------------------------------------------------------------
+    user_info = st.session_state.get("user", {"nombre": "Usuario", "rol": "Ejecutivo"})
+    df_historico_db = obtener_historico_db()
+    df_cartera_db = obtener_cartera_db()
 
-with st.expander("📂 **Carga de Archivo Histórico (CSV de Flujo Real)**", expanded=False):
-    st.markdown("Suba un archivo CSV con las columnas: `ds` (Fecha AAAA-MM-DD), `Ingresos` y `Egresos`.")
-    uploaded_file = st.file_uploader("Seleccionar archivo CSV", type=["csv"])
+    # Topbar Ejecutiva
+    col_tb1, col_tb2, col_tb3 = st.columns([2.5, 1.2, 0.8])
+    with col_tb1:
+        st.markdown(f"""
+        <div class="topbar">
+            <div class="brand-logo">💼 PluriOne Liquidity Intelligence <span style="font-size:0.75rem; color:#64748B; font-weight:500;">v7.5 (Horizonte 12 Meses)</span></div>
+            <div>
+                <span class="status-badge">● Sesión: <b>{user_info['nombre']}</b> ({user_info['rol']})</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     
-    if uploaded_file is not None:
+    # Cálculo inicial para exportación en Excel a 12 meses
+    df_proy_global, df_hist_actual = generar_pronostico_real(df_historico_db, dias_horizonte=365, escenario="Base")
+    s_inicial_global = df_proy_global['Saldo_Acumulado'].iloc[0] if not df_proy_global.empty else 0
+    res_mc_global = ejecutar_simulacion_monte_carlo(
+        df_historico_db, saldo_inicial=s_inicial_global, dias_simulacion=365, num_simulaciones=1000
+    )
+
+    with col_tb2:
         try:
-            df_upload = pd.read_csv(uploaded_file)
-            if set(['ds', 'Ingresos', 'Egresos']).issubset(df_upload.columns):
-                guardar_historico_db(df_upload)
-                st.success("¡Datos históricos cargados y guardados en SQLite con éxito!")
-                st.rerun()
-            else:
-                st.error("El archivo CSV debe contener exactamente las columnas: 'ds', 'Ingresos' y 'Egresos'.")
-        except Exception as e:
-            st.error(f"Error al leer el archivo: {e}")
+            bytes_excel = generar_reporte_excel(df_historico_db, df_proy_global, df_cartera_db, res_mc_global)
+            st.download_button(
+                label="📊 Exportar Excel",
+                data=bytes_excel,
+                file_name="PluriOne_Reporte_Anual_12Meses.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        except Exception:
+            st.button("📊 Exportar Excel", disabled=True, use_container_width=True)
 
-st.divider()
-
-# Navigation Tabs
-tab_escenarios, tab_saldos, tab_cartera, tab_var, tab_ai = st.tabs([
-    "📊 Escenarios", "💳 Saldos", "📋 Cartera CxC / CxP", "🎲 Monte Carlo & VaR", "🤖 Copiloto CFO & Soporte"
-])
-
-# PESTAÑA 1: ESCENARIOS
-with tab_escenarios:
-    col_sel, col_blank = st.columns([2, 4])
-    with col_sel:
-        escenario_sel = st.selectbox("Escenario Económico", ["Base", "Optimista", "Conservador"], key="sel_esc")
-
-    df_proy_esc, df_hist_actual = generar_pronostico_real(
-        df_historico_db, dias_horizonte=30, retraso_cobro=0, escenario=escenario_sel
-    )
-    
-    s_inicial = df_proy_esc['Saldo_Acumulado'].iloc[0]
-    total_cobros = df_proy_esc['Ingresos'].sum()
-    total_pagos = df_proy_esc['Egresos'].sum()
-    s_final = df_proy_esc['Saldo_Acumulado'].iloc[-1]
-
-    col_kpi_side, col_chart_main = st.columns([1.2, 4.8])
-
-    with col_kpi_side:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-label">💳 SALDO INICIAL</div>
-            <div class="kpi-value">${s_inicial:,.2f}</div>
-        </div>
-        <div class="kpi-card">
-            <div class="kpi-label">↗ COBROS PROYECTADOS</div>
-            <div class="kpi-value positive">${total_cobros:,.2f}</div>
-        </div>
-        <div class="kpi-card">
-            <div class="kpi-label">↘ PAGOS PROYECTADOS</div>
-            <div class="kpi-value negative">-${total_pagos:,.2f}</div>
-        </div>
-        <div class="kpi-card">
-            <div class="kpi-label">🏁 SALDO FINAL ESTIMADO</div>
-            <div class="kpi-value">${s_final:,.2f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col_chart_main:
-        fig_esc = crear_grafica_escenarios(df_proy_esc)
-        st.plotly_chart(fig_esc, use_container_width=True)
-
-# PESTAÑA 2: SALDOS
-with tab_saldos:
-    df_proy_saldos, _ = generar_pronostico_real(df_historico_db, dias_horizonte=30, escenario="Base")
-    s_ini = df_proy_saldos['Saldo_Acumulado'].iloc[0]
-    s_fin = df_proy_saldos['Saldo_Acumulado'].iloc[-1]
-
-    col_kpi_saldos, col_chart_saldos = st.columns([1.2, 4.8])
-
-    with col_kpi_saldos:
-        st.markdown(f"""
-        <div class="kpi-card">
-            <div class="kpi-label">💳 SALDO INICIAL</div>
-            <div class="kpi-value">${s_ini:,.2f}</div>
-        </div>
-        <div class="kpi-card">
-            <div class="kpi-label">🏁 SALDO FINAL</div>
-            <div class="kpi-value">${s_fin:,.2f}</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    with col_chart_saldos:
-        fig_area = crear_grafica_saldos_area(df_proy_saldos, df_hist_actual)
-        st.plotly_chart(fig_area, use_container_width=True)
-
-# PESTAÑA 3: CARTERA
-with tab_cartera:
-    render_modulo_cartera()
-
-
-# PESTAÑA 4: MONTE CARLO & VAR (REAL)
-with tab_var:
-    st.subheader("🎲 Análisis Estocástico de Riesgo (Monte Carlo & VaR)")
-    st.caption("Ejecución de 1,000 simulaciónes stocásticas sobre la volatilidad histórica de ingresos y egresos.")
-
-    # Ejecución de la simulación con datos reales
-    res_mc = ejecutar_simulacion_monte_carlo(
-        df_historico_db, 
-        saldo_inicial=s_inicial, 
-        dias_simulacion=30, 
-        num_simulaciones=1000, 
-        umbral_minimo=50000.0
-    )
-
-    col_v1, col_v2, col_v3 = st.columns(3)
-    col_v1.metric(
-        "Value at Risk (VaR 95%)", 
-        f"${res_mc['var_95']:,.2f} MXN", 
-        help="Máxima pérdida o déficit esperado con un 95% de nivel de confianza."
-    )
-    col_v2.metric(
-        "Value at Risk (VaR 99%)", 
-        f"${res_mc['var_99']:,.2f} MXN", 
-        help="Déficit máximo en escenario de estrés severo al 99% de confianza."
-    )
-    col_v3.metric(
-        "Riesgo de Iliquidez", 
-        f"{res_mc['prob_iliquidez']:.1f}%", 
-        delta="Bajo Riesgo" if res_mc['prob_iliquidez'] < 5 else "Atención Requerida",
-        delta_color="normal" if res_mc['prob_iliquidez'] < 5 else "inverse"
-    )
-
-    st.markdown("---")
-    fig_mc = crear_grafica_monte_carlo(res_mc, umbral_minimo=50000.0)
-    st.plotly_chart(fig_mc, use_container_width=True)
-
-# PESTAÑA 5: ASISTENTES IA
-with tab_ai:
-    col_cfo, col_bot = st.columns(2)
-    with col_cfo:
-        contexto = f"Saldo inicial: ${s_inicial:,.2f}, Saldo Final Estimado:${s_final:,.2f}, Escenario: {escenario_sel}"
-        render_copilot(contexto)
-    with col_bot:
-        st.subheader("🤖 PluriBot - Soporte Técnico")
-        if "support_messages" not in st.session_state:
-            st.session_state.support_messages = [{"role": "assistant", "content": "¡Hola! 👋 Soy **PluriBot**."}]
-        for msg in st.session_state.support_messages:
-            role = "🤖 PluriBot" if msg["role"] == "assistant" else "👤 Tú"
-            st.markdown(f"**{role}:** {msg['content']}")
-        if user_query := st.text_input("Escribe tu duda...", key="tab_supp"):
-            st.session_state.support_messages.append({"role": "user", "content": user_query})
-            bot_reply = responder_soporte_fallback(user_query)
-            st.session_state.support_messages.append({"role": "assistant", "content": bot_reply})
+    with col_tb3:
+        if st.button("🚪 Salir", use_container_width=True):
+            st.session_state["authenticated"] = False
+            st.session_state["user"] = None
             st.rerun()
+
+    # Carga de Datos y Estado
+    with st.expander("📂 **Carga de Archivo Histórico (CSV de Flujo Real)**", expanded=False):
+        st.markdown("Suba un archivo CSV con las columnas: `ds` (Fecha AAAA-MM-DD), `Ingresos` y `Egresos`.")
+        uploaded_file = st.file_uploader("Seleccionar archivo CSV", type=["csv"])
+        
+        if uploaded_file is not None:
+            try:
+                df_upload = pd.read_csv(uploaded_file)
+                if set(['ds', 'Ingresos', 'Egresos']).issubset(df_upload.columns):
+                    guardar_historico_db(df_upload)
+                    st.success("¡Datos históricos cargados y guardados en SQLite con éxito!")
+                    st.rerun()
+                else:
+                    st.error("El archivo CSV debe contener exactamente las columnas: 'ds', 'Ingresos' y 'Egresos'.")
+            except Exception as e:
+                st.error(f"Error al leer el archivo: {e}")
+
+    st.divider()
+
+    # Pestañas Principales
+    tab_escenarios, tab_saldos, tab_cartera, tab_var, tab_ai = st.tabs([
+        "📊 Escenarios", "💳 Saldos", "📋 Cartera CxC / CxP", "🎲 Monte Carlo & VaR", "🤖 Copiloto CFO & Soporte"
+    ])
+
+    # PESTAÑA 1: ESCENARIOS
+    with tab_escenarios:
+        col_sel1, col_sel2 = st.columns([2, 2])
+        with col_sel1:
+            escenario_sel = st.selectbox("Escenario Económico", ["Base", "Optimista", "Conservador"], key="sel_esc")
+        with col_sel2:
+            horizonte_sel = st.selectbox(
+                "Horizonte de Proyección",
+                [30, 60, 90, 180, 365],
+                format_func=lambda x: f"{x // 30} Meses ({x} días)" if x >= 30 else f"{x} días",
+                index=4,  # Seleccionado en 365 días (12 Meses) por defecto
+                key="sel_horiz"
+            )
+
+        df_proy_esc, _ = generar_pronostico_real(
+            df_historico_db, dias_horizonte=horizonte_sel, retraso_cobro=0, escenario=escenario_sel
+        )
+        
+        s_inicial = df_proy_esc['Saldo_Acumulado'].iloc[0] if not df_proy_esc.empty else 0
+        total_cobros = df_proy_esc['Ingresos'].sum() if not df_proy_esc.empty else 0
+        total_pagos = df_proy_esc['Egresos'].sum() if not df_proy_esc.empty else 0
+        s_final = df_proy_esc['Saldo_Acumulado'].iloc[-1] if not df_proy_esc.empty else 0
+
+        col_kpi_side, col_chart_main = st.columns([1.2, 4.8])
+
+        with col_kpi_side:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">💳 SALDO INICIAL</div>
+                <div class="kpi-value">${s_inicial:,.2f}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">↗ COBROS PROYECTADOS ({horizonte_sel // 30 if horizonte_sel>=30 else horizonte_sel}M)</div>
+                <div class="kpi-value positive">${total_cobros:,.2f}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">↘ PAGOS PROYECTADOS ({horizonte_sel // 30 if horizonte_sel>=30 else horizonte_sel}M)</div>
+                <div class="kpi-value negative">-${total_pagos:,.2f}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">🏁 SALDO FINAL ESTIMADO</div>
+                <div class="kpi-value">${s_final:,.2f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_chart_main:
+            fig_esc = crear_grafica_escenarios(df_proy_esc)
+            st.plotly_chart(fig_esc, use_container_width=True)
+
+    # PESTAÑA 2: SALDOS
+    with tab_saldos:
+        df_proy_saldos, _ = generar_pronostico_real(df_historico_db, dias_horizonte=horizonte_sel, escenario="Base")
+        s_ini = df_proy_saldos['Saldo_Acumulado'].iloc[0] if not df_proy_saldos.empty else 0
+        s_fin = df_proy_saldos['Saldo_Acumulado'].iloc[-1] if not df_proy_saldos.empty else 0
+
+        col_kpi_saldos, col_chart_saldos = st.columns([1.2, 4.8])
+
+        with col_kpi_saldos:
+            st.markdown(f"""
+            <div class="kpi-card">
+                <div class="kpi-label">💳 SALDO INICIAL</div>
+                <div class="kpi-value">${s_ini:,.2f}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">🏁 SALDO FINAL ({horizonte_sel // 30 if horizonte_sel>=30 else horizonte_sel}M)</div>
+                <div class="kpi-value">${s_fin:,.2f}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+        with col_chart_saldos:
+            fig_area = crear_grafica_saldos_area(df_proy_saldos, df_hist_actual)
+            st.plotly_chart(fig_area, use_container_width=True)
+
+    # PESTAÑA 3: CARTERA
+    with tab_cartera:
+        render_modulo_cartera()
+
+    # PESTAÑA 4: MONTE CARLO & VAR
+    with tab_var:
+        st.subheader(f"🎲 Análisis Estocástico de Riesgo a {horizonte_sel // 30 if horizonte_sel>=30 else horizonte_sel} Meses (Monte Carlo & VaR)")
+        st.caption(f"Ejecución de 1,000 simulaciones estocásticas proyectando {horizonte_sel} días sobre la volatilidad histórica de ingresos y egresos.")
+
+        res_mc = ejecutar_simulacion_monte_carlo(
+            df_historico_db, 
+            saldo_inicial=s_inicial, 
+            dias_simulacion=horizonte_sel, 
+            num_simulaciones=1000, 
+            umbral_minimo=50000.0
+        )
+
+        col_v1, col_v2, col_v3 = st.columns(3)
+        col_v1.metric(f"Value at Risk (VaR 95% - {horizonte_sel} días)", f"${res_mc['var_95']:,.2f} MXN")
+        col_v2.metric(f"Value at Risk (VaR 99% - {horizonte_sel} días)", f"${res_mc['var_99']:,.2f} MXN")
+        col_v3.metric("Riesgo de Iliquidez", f"{res_mc['prob_iliquidez']:.1f}%")
+
+        st.markdown("---")
+        fig_mc = crear_grafica_monte_carlo(res_mc, umbral_minimo=50000.0)
+        st.plotly_chart(fig_mc, use_container_width=True)
+
+    # PESTAÑA 5: ASISTENTES IA
+    with tab_ai:
+        col_cfo, col_bot = st.columns(2)
+        with col_cfo:
+            contexto = f"Horizonte: {horizonte_sel} días (12 meses), Saldo inicial: ${s_inicial:,.2f}, Saldo Final Estimado:${s_final:,.2f}, Escenario: {escenario_sel}"
+            render_copilot(contexto)
+        with col_bot:
+            st.subheader("🤖 PluriBot - Soporte Técnico")
+            if "support_messages" not in st.session_state:
+                st.session_state.support_messages = [{"role": "assistant", "content": "¡Hola! 👋 Soy **PluriBot**."}]
+            for msg in st.session_state.support_messages:
+                role = "🤖 PluriBot" if msg["role"] == "assistant" else "👤 Tú"
+                st.markdown(f"**{role}:** {msg['content']}")
+            if user_query := st.text_input("Escribe tu duda...", key="tab_supp"):
+                st.session_state.support_messages.append({"role": "user", "content": user_query})
+                bot_reply = responder_soporte_fallback(user_query)
+                st.session_state.support_messages.append({"role": "assistant", "content": bot_reply})
+                st.rerun()

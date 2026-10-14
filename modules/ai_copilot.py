@@ -6,24 +6,25 @@ load_dotenv()
 
 SYSTEM_CFO_PROMPT = """
 Eres el "Copiloto CFO", Director Financiero Virtual de alto nivel para PluriOne S.A. de C.V.
-Tu objetivo es brindar diagnósticos prescriptivos y recomendaciones estratégicas de liquidez y capital de trabajo.
+Tu objetivo es emitir diagnósticos prescriptivos y recomendaciones estratégicas de liquidez y capital de trabajo.
+Responde utilizando viñetas estilizadas, tono formal, ejecutivo y enfocado en accionables financieros inmediatos.
 """
 
 def generar_recomendacion_cfo_fallback(contexto_str):
     return (
-        "📊 **Diagnóstico del Copiloto CFO (Análisis Prescriptivo):**\n\n"
-        "1. **Monitoreo de Mínimos:** Vigile el saldo mínimo proyectado respecto al umbral de seguridad fijado.\n"
-        "2. **Gestión de Cuentas por Cobrar (CXC):** Revise las facturas en la Pestaña 2 para negociar esquemas de pronto pago.\n"
-        "3. **Estrategia de Mitigación:** Si la simulación Monte Carlo muestra un riesgo mayor al 10%, evalúe solicitar líneas de crédito de capital de trabajo con anticipación."
+        "📊 **Diagnóstico Prescriptivo del Copiloto CFO:**\n\n"
+        "1. **Monitoreo de Mínimos:** Se sugiere mantener una cobertura mínima de 15 días de egresos operativos en caja principal.\n"
+        "2. **Estrategia de Cobranza:** Active llamadas de seguimiento sobre las facturas de la Pestaña 3 con probabilidad menor a 0.8.\n"
+        "3. **Mitigación de Riesgo:** Si la proyección stocástica indica déficit, evalúe esquemas de factoraje o líneas de crédito revolventes."
     )
 
 def render_copilot(contexto_sistema):
-    st.subheader("💬 Copiloto Financiero (CFO Virtual IA)")
-    st.caption("Asesoría estratégica en tiempo real basada en las proyecciones y el estado de tesorería.")
+    st.subheader("👔 Copiloto Financiero (CFO Virtual IA)")
+    st.caption("Asesoría estratégica en tiempo real alineada con el saldo de tesorería y escenarios 'What-If'.")
 
     if "cfo_messages" not in st.session_state:
         st.session_state.cfo_messages = [
-            {"role": "assistant", "content": "¡Hola! Soy tu Copiloto CFO. He analizado el estado actual de tu tesorería. ¿En qué decisión financiera te puedo apoyar?"}
+            {"role": "assistant", "content": "¡Hola! Soy tu **Copiloto CFO Virtual**. He analizado el estado de tesorería de PluriOne. ¿Qué escenario o decisión estratégica deseas evaluar hoy?"}
         ]
 
     for msg in st.session_state.cfo_messages:
@@ -32,7 +33,7 @@ def render_copilot(contexto_sistema):
         else:
             st.markdown(f'<div class="chat-user">👤 <b>Tú:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
 
-    if prompt := st.chat_input("Plantea una consulta estratégica de liquidez..."):
+    if prompt := st.chat_input("Plantea una pregunta sobre liquidez o capital de trabajo..."):
         st.session_state.cfo_messages.append({"role": "user", "content": prompt})
         
         api_key = os.getenv("OPENAI_API_KEY")

@@ -1,14 +1,19 @@
 import sqlite3
+import hashlib
 import pandas as pd
 
 DB_NAME = "flujo_efectivo.db"
 
+def hash_password(password: str) -> str:
+    """Encripta la contraseña utilizando SHA-256."""
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
 def init_db():
-    """Inicializa la base de datos SQLite con las tablas de histórico y cartera."""
+    """Inicializa la base de datos SQLite con las tablas de histórico, cartera y usuarios."""
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # Tabla de Histórico de Ingresos y Egresos
+    # Tabla de Histórico
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS historico (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -29,19 +34,73 @@ def init_db():
             descripcion TEXT
         )
     """)
+
+    # Tabla de Usuarios
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS usuarios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE,
+            password_hash TEXT,
+            nombre TEXT,
+            rol TEXT
+        )
+    """)
     
+    # Insertar usuario administrador por defecto si no existen usuarios
+    cursor.execute("SELECT COUNT(*) FROM usuarios")
+    if cursor.fetchone()[0] == 0:
+        default_user = "admin@plurione.com"
+        default_pass = hash_password("PluriOne2026!")
+        cursor.execute(
+            "INSERT INTO usuarios (email, password_hash, nombre, rol) VALUES (?, ?, ?, ?)",
+            (default_user, default_pass, "Director Financiero (CFO)", "Administrador")
+        )
+
     conn.commit()
     conn.close()
 
+def autenticar_usuario(email, password):
+    """Verifica si las credenciales ingresadas coinciden con SQLite."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    pass_hash = hash_password(password)
+    
+    cursor.execute(
+        "SELECT email, nombre, rol FROM usuarios WHERE email = ? AND password_hash = ?",
+        (email.strip().lower(), pass_hash)
+    )
+    usuario = cursor.fetchone()
+    conn.close()
+    
+    if usuario:
+        return {"email": usuario[0], "nombre": usuario[1], "rol": usuario[2]}
+    return None
+
+def registrar_usuario(email, password, nombre, rol="Analista Financiero"):
+    """Registra un nuevo usuario en la base de datos SQLite con contraseña cifrada."""
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    pass_hash = hash_password(password)
+    try:
+        cursor.execute(
+            "INSERT INTO usuarios (email, password_hash, nombre, rol) VALUES (?, ?, ?, ?)",
+            (email.strip().lower(), pass_hash, nombre.strip(), rol)
+        )
+        conn.commit()
+        conn.close()
+        return True, "¡Usuario registrado exitosamente! Ya puede iniciar sesión."
+    except sqlite3.IntegrityError:
+        conn.close()
+        return False, "El correo electrónico ya se encuentra registrado."
+    except Exception as e:
+        conn.close()
+        return False, f"Error al registrar el usuario: {e}"
+
 def guardar_historico_db(df):
-    """Guarda o reemplaza los datos históricos en la base de datos SQLite."""
     if df is None or df.empty:
         return
-    
     df_clean = df.copy()
     df_clean['ds'] = pd.to_datetime(df_clean['ds']).dt.strftime('%Y-%m-%d')
-    
-    # Renombrar columnas si vienen en mayúsculas/minúsculas
     col_map = {col: col.capitalize() for col in df_clean.columns}
     df_clean = df_clean.rename(columns=col_map)
     
@@ -56,7 +115,6 @@ def guardar_historico_db(df):
         conn.close()
 
 def obtener_historico_db():
-    """Recupera el histórico financiero almacenado en SQLite."""
     conn = sqlite3.connect(DB_NAME)
     try:
         df = pd.read_sql("SELECT ds, ingresos AS Ingresos, egresos AS Egresos FROM historico ORDER BY ds ASC", conn)
@@ -68,7 +126,6 @@ def obtener_historico_db():
     return df
 
 def guardar_cartera_db(df):
-    """Guarda la cartera CxC/CxP en SQLite."""
     if df is None or df.empty:
         return
     conn = sqlite3.connect(DB_NAME)
@@ -76,7 +133,6 @@ def guardar_cartera_db(df):
     conn.close()
 
 def obtener_cartera_db():
-    """Recupera la cartera desde SQLite."""
     conn = sqlite3.connect(DB_NAME)
     try:
         df = pd.read_sql("SELECT fecha, monto, tipo, probabilidad, descripcion FROM cartera", conn)

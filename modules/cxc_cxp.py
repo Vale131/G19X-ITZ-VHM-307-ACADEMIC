@@ -1,78 +1,75 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
-from modules.database import init_db, guardar_cartera_db, obtener_cartera_db
+import datetime
+from modules.database import obtener_cartera_db, guardar_cartera_db
 
-def calcular_aging(cartera_df):
-    """Clasifica la cartera por cobrar en rangos de antigüedad (Aging)."""
-    if cartera_df is None or cartera_df.empty:
-        return None
-    
-    df = cartera_df.copy()
-    hoy = datetime.today()
-    df["dias_vencimiento"] = (pd.to_datetime(df["fecha"]) - hoy).dt.days
-    
-    cxc = df[df["tipo"].astype(str).str.upper() == "CXC"].copy()
-    if cxc.empty:
-        return None
-
-    cxc["rango"] = "Por Vencer"
-    cxc.loc[cxc["dias_vencimiento"] < 0, "rango"] = "1-30 días vencida"
-    cxc.loc[cxc["dias_vencimiento"] < -30, "rango"] = "31-60 días vencida"
-    cxc.loc[cxc["dias_vencimiento"] < -60, "rango"] = "+60 días (Crítica)"
-
-    resumen = cxc.groupby("rango")["monto"].agg(["sum", "count"]).reset_index()
-    resumen.columns = ["Rango de Antigüedad", "Monto Total ($ MXN)", "Número de Facturas"]
-    return resumen
-
-def render_modulo_cartera(cartera_input=None):
-    """Renderiza el editor interactivo de cartera, sincronizado con SQLite."""
+def render_modulo_cartera():
+    """Renderiza el módulo de Cartera de Cuentas por Cobrar (CxC) y Pagar (CxP) con Aging Analysis."""
     st.subheader("📋 Gestión de Cartera Documentada (CxC / CxP)")
-    st.caption("Los cambios realizados aquí se guardan de forma permanente en la base de datos local SQLite.")
+    st.caption("Edición interactiva con persistencia automática en SQLite y análisis de antigüedad de saldos (Aging).")
 
-    init_db()
-    cartera_db = obtener_cartera_db()
-    
-    if not cartera_db.empty:
-        df_base = cartera_db
-    elif cartera_input is not None and not cartera_input.empty:
-        df_base = cartera_input
-    else:
-        df_base = pd.DataFrame([
-            {"fecha": "2026-10-25", "monto": 85000.0, "tipo": "CXC", "probabilidad": 0.90, "descripcion": "Factura Cliente Alpha"},
-            {"fecha": "2026-10-31", "monto": 42000.0, "tipo": "CXP", "probabilidad": 1.00, "descripcion": "Pago Renta Oficinas"},
-            {"fecha": "2026-11-05", "monto": 120000.0, "tipo": "CXC", "probabilidad": 0.75, "descripcion": "Licitación PluriOne"}
+    df_cartera = obtener_cartera_db()
+
+    # Si la base de datos está vacía, inicializar con estructura predeterminada
+    if df_cartera.empty or not set(['fecha', 'monto', 'tipo', 'probabilidad', 'descripcion']).issubset(df_cartera.columns):
+        df_cartera = pd.DataFrame([
+            {"fecha": datetime.date.today() + datetime.timedelta(days=10), "monto": 120000.0, "tipo": "Cobro", "probabilidad": 0.95, "descripcion": "Factura Cliente Alfa"},
+            {"fecha": datetime.date.today() - datetime.timedelta(days=15), "monto": 45000.0, "tipo": "Cobro", "probabilidad": 0.80, "descripcion": "Factura Cliente Beta (Vencida)"},
+            {"fecha": datetime.date.today() + datetime.timedelta(days=5), "monto": 80000.0, "tipo": "Pago", "probabilidad": 1.00, "descripcion": "Proveedor Insumos X"},
+            {"fecha": datetime.date.today() - datetime.timedelta(days=45), "monto": 30000.0, "tipo": "Cobro", "probabilidad": 0.60, "descripcion": "Factura Cliente Gamma (Crítica)"}
         ])
 
-    st.markdown("##### ✏️ Tabla Editable de Facturas (Persistencia Activa)")
-    df_editado = st.data_editor(
-        df_base,
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "monto": st.column_config.NumberColumn("Monto ($ MXN)", format="$%.2f"),
-            "probabilidad": st.column_config.NumberColumn("Probabilidad (0.0 - 1.0)", min_value=0.0, max_value=1.0, step=0.05),
-            "tipo": st.column_config.SelectboxColumn("Tipo", options=["CXC", "CXP"])
-        },
-        key="editor_cartera"
-    )
+    # CONVERSIÓN CLAVE: Convertir la columna 'fecha' a tipo date para evitar la StreamlitAPIException
+    df_cartera['fecha'] = pd.to_datetime(df_cartera['fecha']).dt.date
 
-    if st.button("💾 Guardar Cambios en Base de Datos", type="primary"):
-        guardar_cartera_db(df_editado)
-        st.success("¡Datos guardados correctamente en la base de datos `flujo_efectivo.db`!")
+    col_editor, col_aging = st.columns([3.5, 2.5])
 
-    st.divider()
+    with col_editor:
+        st.markdown("##### ✏️ **Editor de Movimientos de Cartera**")
+        df_editado = st.data_editor(
+            df_cartera,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_cartera_db",
+            column_config={
+                "fecha": st.column_config.DateColumn("Fecha Compromiso", format="YYYY-MM-DD", required=True),
+                "monto": st.column_config.NumberColumn("Monto ($ MXN)", format="$%.2f", min_value=0.0, required=True),
+                "tipo": st.column_config.SelectboxColumn("Tipo", options=["Cobro", "Pago"], required=True),
+                "probabilidad": st.column_config.NumberColumn("Prob. Cobro (0-1)", format="%.2f", min_value=0.0, max_value=1.0, required=True),
+                "descripcion": st.column_config.TextColumn("Descripción / Cliente", required=True)
+            }
+        )
 
-    st.markdown("##### ⏳ Matriz de Antigüedad de Saldos (Aging Analysis)")
-    df_aging = calcular_aging(df_editado)
-    if df_aging is not None:
-        col_aging, col_stats = st.columns([1.5, 1])
-        with col_aging:
-            st.dataframe(df_aging, use_container_width=True)
-        with col_stats:
-            monto_cxc = df_editado[df_editado["tipo"] == "CXC"]["monto"].sum()
-            monto_cxp = df_editado[df_editado["tipo"] == "CXP"]["monto"].sum()
-            st.metric("Total Cuentas por Cobrar (CXC)", f"${monto_cxc:,.2f} MXN")
-            st.metric("Total Cuentas por Pagar (CXP)", f"${monto_cxp:,.2f} MXN", delta=f"${monto_cxc - monto_cxp:,.2f} Neto", delta_color="normal")
+        if st.button("💾 Guardar Cambios en Base de Datos", type="primary", use_container_width=True):
+            guardar_cartera_db(df_editado)
+            st.success("¡Base de datos SQLite actualizada correctamente!")
+            st.rerun()
 
-    return df_editado
+    with col_aging:
+        st.markdown("##### ⏳ **Análisis de Antigüedad de Saldos (Aging)**")
+        
+        if not df_editado.empty:
+            hoy = datetime.date.today()
+            df_cxc = df_editado[df_editado['tipo'] == 'Cobro'].copy()
+            
+            if not df_cxc.empty:
+                df_cxc['dias_vencido'] = df_cxc['fecha'].apply(lambda x: (hoy - x).days if isinstance(x, datetime.date) else 0)
+
+                por_vencer = df_cxc[df_cxc['dias_vencido'] <= 0]['monto'].sum()
+                vencido_1_30 = df_cxc[(df_cxc['dias_vencido'] > 0) & (df_cxc['dias_vencido'] <= 30)]['monto'].sum()
+                vencido_31_60 = df_cxc[(df_cxc['dias_vencido'] > 30) & (df_cxc['dias_vencido'] <= 60)]['monto'].sum()
+                vencido_mas_60 = df_cxc[df_cxc['dias_vencido'] > 60]['monto'].sum()
+
+                df_aging_resumen = pd.DataFrame([
+                    {"Tramo de Antigüedad": "🟢 Por Vencer", "Monto ($ MXN)": por_vencer},
+                    {"Tramo de Antigüedad": "🟡 1 a 30 Días", "Monto ($ MXN)": vencido_1_30},
+                    {"Tramo de Antigüedad": "🟠 31 a 60 Días", "Monto ($ MXN)": vencido_31_60},
+                    {"Tramo de Antigüedad": "🔴 +60 Días (Crítico)", "Monto ($ MXN)": vencido_mas_60}
+                ])
+
+                st.dataframe(df_aging_resumen, use_container_width=True, hide_index=True)
+
+                total_vencido = vencido_1_30 + vencido_31_60 + vencido_mas_60
+                st.warning(f"⚠️ **Cartera Total Vencida:** ${total_vencido:,.2f} MXN")
+            else:
+                st.info("No hay registros de cuentas por cobrar (Cobros) en la cartera.")
