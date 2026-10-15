@@ -1,187 +1,228 @@
 import streamlit as st
 
 def aplicar_estilos_css():
-    """Inyecta todos los estilos CSS del tema ejecutivo SaaS."""
-    st.markdown("""
+    """Aplica el diseño ejecutivo con indicador dorado lateral e interfaz de cristal oscuro."""
+    st.markdown(r"""
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <style>
-        /* Estructura Global */
+        /* ESTRUCTURA GLOBAL */
         html, body, [class*="css"] {
             font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif !important;
         }
         .stApp {
-            background-color: #F8FAFC;
-            color: #0F172A;
+            background-color: #FAF6EE !important;
+            color: #23030D !important;
         }
-        #MainMenu, footer, header { visibility: hidden; }
         
+        #MainMenu, footer { visibility: hidden; }
+        header { background-color: transparent !important; }
+
         .block-container {
-            padding-top: 1.5rem !important;
-            padding-bottom: 3rem !important;
-            max-width: 96% !important;
+            padding-top: 1.2rem !important;
+            padding-bottom: 2.5rem !important;
+            max-width: 98% !important;
         }
 
-        /* Header Ejecutivo / Topbar */
-        .executive-header {
-            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
-            border-radius: 16px;
-            padding: 20px 28px;
-            color: #FFFFFF;
-            box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.12);
-            margin-bottom: 1.5rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        /* BARRA LATERAL (BORGOÑA PROFUNDO #23030D) */
+        section[data-testid="stSidebar"] {
+            background-color: #23030D !important;
+            border-right: 1px solid rgba(253, 211, 77, 0.12) !important;
+            box-shadow: 6px 0 25px rgba(0, 0, 0, 0.4) !important;
         }
-        .brand-title {
-            font-size: 1.4rem;
+
+        section[data-testid="stSidebar"] .stMarkdown, 
+        section[data-testid="stSidebar"] label,
+        section[data-testid="stSidebar"] span,
+        section[data-testid="stSidebar"] p {
+            color: #FDF6E2 !important;
+        }
+
+        /* BOTÓN SUPERIOR DE CONTRAER / DESPLEGAR */
+        [data-testid="stSidebarHeader"] button {
+            color: #FCD34D !important;
+            background-color: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid rgba(253, 211, 77, 0.2) !important;
+            border-radius: 8px !important;
+        }
+
+        /* CARD DE USUARIO EN CRISTAL */
+        .sidebar-user-card {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 18px;
+            padding: 14px 16px;
+            margin-bottom: 22px;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+        }
+        .sidebar-user-avatar {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: #FCD34D;
+            color: #23030D;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-weight: 800;
-            letter-spacing: -0.02em;
-            color: #FFFFFF;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            font-size: 1.25rem;
+            box-shadow: 0 2px 10px rgba(252, 211, 77, 0.25);
         }
-        .brand-subtitle {
-            font-size: 0.8rem;
-            color: #94A3B8;
-            font-weight: 500;
+        .sidebar-user-name {
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: #FFFFFF;
+            line-height: 1.2;
+        }
+        .sidebar-user-role {
+            font-size: 0.82rem;
+            color: #A89269;
+            font-weight: 600;
             margin-top: 2px;
         }
-        .user-badge {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            padding: 6px 14px;
-            border-radius: 30px;
-            font-size: 0.82rem;
-            color: #E2E8F0;
-            font-weight: 600;
+
+        /* OPCIONES DE NAVEGACIÓN */
+        section[data-testid="stSidebar"] div[role="radiogroup"] {
+            gap: 6px !important;
         }
 
-        /* Pestañas de Navegación */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 10px;
-            background-color: #EEF2F6;
-            padding: 6px;
-            border-radius: 14px;
-            border: 1px solid #E2E8F0;
-            margin-bottom: 1.5rem;
-        }
-        .stTabs [data-baseweb="tab"] {
-            height: 44px;
-            border-radius: 10px;
-            padding: 0px 22px;
-            color: #64748B;
-            font-weight: 700;
-            font-size: 0.88rem;
-            border: none !important;
-            transition: all 0.2s ease;
-        }
-        .stTabs [aria-selected="true"] {
-            background-color: #FFFFFF !important;
-            color: #4F46E5 !important;
-            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.12) !important;
+        /* OCULTAR COMPLETAMENTE LOS CÍRCULOS DE RADIO */
+        section[data-testid="stSidebar"] div[role="radiogroup"] label input[type="radio"],
+        section[data-testid="stSidebar"] div[role="radiogroup"] label > div:first-child {
+            display: none !important;
         }
 
-        /* Tarjetas KPI Ejecutivas */
-        .kpi-card-v2 {
-            background-color: #FFFFFF;
-            border: 1px solid #E2E8F0;
-            border-radius: 14px;
-            padding: 18px 20px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-            margin-bottom: 12px;
-            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        /* BOTÓN DE OPCIÓN INACTIVO */
+        section[data-testid="stSidebar"] div[role="radiogroup"] label {
+            background: transparent !important;
+            border: 1px solid transparent !important;
+            border-radius: 16px !important;
+            padding: 12px 16px !important;
+            transition: all 0.25s ease !important;
+            font-weight: 600 !important;
+            font-size: 0.94rem !important;
+            color: #FDF6E2 !important;
+            cursor: pointer !important;
+            margin: 0 !important;
+            width: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            position: relative !important;
         }
-        .kpi-card-v2:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px -4px rgba(0, 0, 0, 0.06);
-        }
-        .kpi-header-text {
-            font-size: 0.72rem;
-            font-weight: 800;
-            color: #64748B;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        .kpi-amount-text {
-            font-size: 1.45rem;
-            font-weight: 800;
-            color: #0F172A;
-            margin-top: 4px;
-            letter-spacing: -0.02em;
-        }
-        .kpi-amount-text.pos { color: #10B981; }
-        .kpi-amount-text.neg { color: #EF4444; }
-        
-        .status-pill {
-            display: inline-block;
-            font-size: 0.7rem;
-            font-weight: 700;
-            padding: 3px 8px;
-            border-radius: 12px;
-            margin-top: 6px;
-        }
-        .pill-green { background-color: #D1FAE5; color: #065F46; }
-        .pill-red { background-color: #FEE2E2; color: #991B1B; }
-        .pill-blue { background-color: #E0E7FF; color: #3730A3; }
 
-        /* Personalización de Botones de Acción */
-        div.stButton > button {
-            border-radius: 10px !important;
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
+            background: rgba(255, 255, 255, 0.04) !important;
+            color: #FCD34D !important;
+        }
+
+        /* OPCIÓN SELECCIONADA: TARJETA DE CRISTAL OSCURO CON BORDE FINO DORADO */
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) {
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid rgba(252, 211, 77, 0.35) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35) !important;
+        }
+
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) span,
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) p,
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked) div {
+            color: #FCD34D !important;
             font-weight: 700 !important;
-            font-size: 0.88rem !important;
-            padding: 0.5rem 1rem !important;
-            transition: all 0.2s ease !important;
+        }
+
+        /* INDICADOR LATERAL VERTICAL DORADO */
+        section[data-testid="stSidebar"] div[role="radiogroup"] label:has(input:checked)::before {
+            content: '';
+            position: absolute;
+            left: -12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 5px;
+            height: 26px;
+            background-color: #FCD34D;
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(252, 211, 77, 0.85);
+        }
+
+        /* TARJETAS KPI */
+        .kpi-card-ref {
+            background: #FFFFFF;
+            border: 1px solid #F3EAD3;
+            border-radius: 16px;
+            padding: 20px 22px;
+            box-shadow: 0 4px 18px rgba(35, 3, 13, 0.04);
+            position: relative;
+        }
+        .kpi-title-ref {
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #6B1128;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+        }
+        .kpi-value-ref {
+            font-size: 1.65rem;
+            font-weight: 800;
+            color: #23030D;
+        }
+        .kpi-icon-badge {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            background: #FFFBEB;
+            border-radius: 8px;
+            padding: 4px 8px;
+            font-size: 0.72rem;
+            color: #B45309;
+            font-weight: 800;
+        }
+
+        /* BOTONES DE ACCIÓN */
+        div.stButton > button {
+            background-color: #EAB308 !important;
+            color: #23030D !important;
+            border-radius: 12px !important;
+            font-weight: 800 !important;
+            border: none !important;
         }
         div.stDownloadButton > button {
-            border-radius: 10px !important;
-            font-weight: 700 !important;
-            background-color: #4F46E5 !important;
-            color: #FFFFFF !important;
+            background: linear-gradient(135deg, #FCD34D 0%, #EAB308 100%) !important;
+            color: #23030D !important;
+            border-radius: 12px !important;
+            font-weight: 800 !important;
             border: none !important;
-            box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25) !important;
-        }
-        div.stDownloadButton > button:hover {
-            background-color: #4338CA !important;
-            transform: translateY(-1px);
-        }
-
-        .stSelectbox label, .stMultiSelect label {
-            font-weight: 700 !important;
-            color: #334155 !important;
-            font-size: 0.85rem !important;
         }
     </style>
     """, unsafe_allow_html=True)
 
 def aplicar_estilo_grafica(fig):
-    """Aplica la paleta y tipografía limpia a cualquier gráfica Plotly."""
+    """Estiliza las gráficas Plotly con fondo transparente."""
     fig.update_layout(
         template="plotly_white",
-        font=dict(family="Plus Jakarta Sans, sans-serif", size=12, color="#334155"),
+        font=dict(family="Plus Jakarta Sans, sans-serif", size=12, color="#4A081A"),
         margin=dict(l=20, r=20, t=40, b=20),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        xaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
-        yaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False)
+        hoverlabel=dict(
+            bgcolor="#23030D",
+            font_size=12,
+            font_family="Plus Jakarta Sans",
+            font_color="#FFFFFF"
+        ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            font=dict(size=11, color="#6B1128")
+        ),
+        xaxis=dict(showgrid=True, gridcolor="#F3EAD3", zeroline=False),
+        yaxis=dict(showgrid=True, gridcolor="#F3EAD3", zeroline=False)
     )
     return fig
-
-def render_topbar_ejecutiva(nombre_usuario, rol_usuario):
-    """Renderiza el banner superior de la aplicación."""
-    st.markdown(f"""
-    <div class="executive-header">
-        <div>
-            <div class="brand-title">💎 PluriOne Liquidity Intelligence</div>
-            <div class="brand-subtitle">Plataforma Predictiva de Tesorería & Análisis Estocástico de Riesgo</div>
-        </div>
-        <div class="user-badge">
-            👤 <b>{nombre_usuario}</b> &nbsp;|&nbsp; <span style="color:#A5B4FC;">{rol_usuario}</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
