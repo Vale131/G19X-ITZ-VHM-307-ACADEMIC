@@ -182,6 +182,28 @@ def aplicar_estilos_css():
             font-weight: 800;
         }
 
+        /* INSIGNIAS DE ESTATUS DE USUARIO */
+        .badge-activo {
+            background-color: #DEF7EC;
+            color: #03543F;
+            font-weight: 800;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            display: inline-block;
+            border: 1px solid #84E1BC;
+        }
+        .badge-inactivo {
+            background-color: #FDE8E8;
+            color: #9B1C1C;
+            font-weight: 800;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.78rem;
+            display: inline-block;
+            border: 1px solid #F8B4B4;
+        }
+
         /* BOTONES DE ACCIÓN */
         div.stButton > button {
             background-color: #EAB308 !important;

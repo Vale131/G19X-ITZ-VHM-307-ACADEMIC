@@ -1,66 +1,43 @@
-import os
 import streamlit as st
-from dotenv import load_dotenv
 
-load_dotenv()
-
-SYSTEM_SUPPORT_PROMPT = """
-Eres "PluriBot", el Asistente Técnico y Guía de Onboarding para la plataforma 'Liquidity Intelligence' de PluriOne S.A. de C.V.
-Tu rol es brindar soporte claro, amable y didáctico con emojis sobre la carga de CSVs, configuración de parámetros y uso del sistema.
-"""
-
-def responder_soporte_fallback(query):
-    q = query.lower()
-    if any(k in q for k in ["csv", "archivo", "formato", "cargar"]):
-        return ("📋 **Formatos CSV Requeridos:**\n\n"
-                "- **Histórico:** Debe contener `ds` (fecha AAAA-MM-DD), `Ingresos` y `Egresos`.\n"
-                "- **Cartera:** Debe incluir `fecha`, `monto`, `tipo` (CXC/CXP) y `probabilidad` (0.0 a 1.0).")
-    elif any(k in q for k in ["var", "monte carlo", "riesgo"]):
-        return ("🎲 **Simulación Monte Carlo & VaR:**\n\n"
-                "Ejecuta iteraciones estocásticas para determinar la volatilidad diaria y calcular el Value at Risk al 95% y 99%.")
-    elif any(k in q for k in ["sqlite", "base de datos", "guardar"]):
-        return ("💾 **Persistencia de Datos:**\n\n"
-                "Todos los cambios realizados en la Pestaña 3 (Cartera) se almacenan automáticamente en la base local `flujo_efectivo.db`.")
-    else:
-        return ("🤖 **PluriBot:** Puedo ayudarte a navegar el sistema, estructurar tus archivos de carga o entender las métricas de riesgo de la plataforma.")
-
-def render_support_widget():
-    st.sidebar.divider()
-    st.sidebar.markdown("### 🤖 PluriBot Assistant")
+def responder_soporte_fallback(query: str) -> str:
+    """Genera respuestas técnicas y operativas según la consulta del usuario."""
+    q = query.lower().strip()
     
-    with st.sidebar.expander("💬 Soporte Técnico Interactivo", expanded=False):
-        if "support_messages" not in st.session_state:
-            st.session_state.support_messages = [
-                {"role": "assistant", "content": "¡Hola! 👋 Soy **PluriBot**. ¿Tienes dudas sobre cómo operar la plataforma?"}
-            ]
+    if any(w in q for w in ["como funciona", "cómo funciona", "ayuda", "guia", "que hace", "qué hace"]):
+        return (
+            "**Navegación general en PluriOne:**\n\n"
+            "• **Cockpit Financiero:** Resumen de KPIs y carga de archivos CSV.\n"
+            "• **Saldos & Tesorería:** Gráfica de evolución de liquidez acumulada.\n"
+            "• **Capital de Trabajo & Cartera:** Gestión de CxC y CxP.\n"
+            "• **Modelado Estocástico & VaR:** Análisis de riesgo con Monte Carlo.\n"
+            "• **Gestión de Usuarios:** Alta de accesos y administración de roles."
+        )
+    elif any(w in q for w in ["csv", "carga", "archivo", "sincronizar", "excel"]):
+        return "Para cargar datos, ve a **Cockpit Financiero** y abre 'Sincronizar Archivo Histórico (CSV)'. Las columnas requeridas son: `ds`, `Ingresos`, `Egresos`."
+    elif any(w in q for w in ["usuario", "contraseña", "acceso", "login"]):
+        return "Puedes crear nuevos usuarios institucionales desde la opción **Gestión de Usuarios** en la barra lateral."
+    else:
+        return f"He recibido tu consulta sobre *'{query}'*. Si tienes dudas sobre la carga de datos o configuración de escenarios, indícamelo para ayudarte."
 
-        for msg in st.session_state.support_messages:
-            if msg["role"] == "assistant":
-                st.markdown(f'<div class="chat-bot">🤖 <b>PluriBot:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="chat-user">👤 <b>Tú:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
+def render_support_agent():
+    """Renderiza el chat de PluriBot utilizando st.chat_input para evitar bucles de recarga."""
+    st.subheader("PluriBot - Soporte Operativo & Asistencia")
+    st.caption("Asistente técnico para dudas sobre la plataforma, formato de datos y navegación.")
 
-        if user_query := st.text_input("💬 Pregunta a PluriBot...", key="side_supp_input"):
-            st.session_state.support_messages.append({"role": "user", "content": user_query})
-            
-            api_key = os.getenv("OPENAI_API_KEY")
-            if api_key and not api_key.startswith("sk-proj-tu_clave"):
-                try:
-                    from openai import OpenAI
-                    client = OpenAI(api_key=api_key)
-                    response = client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {"role": "system", "content": SYSTEM_SUPPORT_PROMPT},
-                            *st.session_state.support_messages
-                        ],
-                        temperature=0.4
-                    )
-                    bot_reply = response.choices[0].message.content
-                except Exception:
-                    bot_reply = responder_soporte_fallback(user_query)
-            else:
-                bot_reply = responder_soporte_fallback(user_query)
+    if "support_messages" not in st.session_state:
+        st.session_state.support_messages = [
+            {"role": "assistant", "content": "Hola, Valeria. Soy **PluriBot**. ¿En qué puedo asistirte con la plataforma?"}
+        ]
 
-            st.session_state.support_messages.append({"role": "assistant", "content": bot_reply})
-            st.rerun()
+    # Mostrar el historial de mensajes
+    for msg in st.session_state.support_messages:
+        role_label = "Usuario" if msg["role"] == "user" else "PluriBot"
+        st.markdown(f"**{role_label}:** {msg['content']}")
+
+    # Entrada de texto usando st.chat_input (limpia el valor automáticamente al enviar)
+    if supp_query := st.chat_input("Escribe tu consulta técnica o sobre la plataforma...", key="pluribot_chat_input"):
+        st.session_state.support_messages.append({"role": "user", "content": supp_query})
+        respuesta = responder_soporte_fallback(supp_query)
+        st.session_state.support_messages.append({"role": "assistant", "content": respuesta})
+        st.rerun()

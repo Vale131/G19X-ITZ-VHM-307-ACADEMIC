@@ -1,28 +1,43 @@
 import sqlite3
 import pandas as pd
 import bcrypt
+import hashlib
 import os
 
 DB_NAME = "flujo_efectivo.db"
 
 def hash_password(password: str) -> str:
-    """Genera un hash seguro utilizando el algoritmo bcrypt con sal incorporada."""
+    """Genera un hash seguro utilizando bcrypt con sal corporativa."""
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
+def hash_sha256(password: str) -> str:
+    """Genera un hash SHA-256 para retrocompatibilidad con cuentas creadas anteriormente."""
+    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+
 def verificar_password(password_plain: str, password_hashed: str) -> bool:
-    """Verifica si la contraseña ingresada coincide con el hash bcrypt almacenado."""
-    try:
-        return bcrypt.checkpw(password_plain.encode('utf-8'), password_hashed.encode('utf-8'))
-    except Exception:
-        # Respaldo para compatibilidad previa en caso de hashes antiguos
-        return password_plain == password_hashed
+    """Verifica contraseñas soportando bcrypt, SHA-256 legacy y texto plano."""
+    if not password_hashed:
+        return False
+        
+    # Verificación de hash bcrypt
+    if password_hashed.startswith("$2a$") or password_hashed.startswith("$2b$"):
+        try:
+            return bcrypt.checkpw(password_plain.encode('utf-8'), password_hashed.encode('utf-8'))
+        except Exception:
+            return False
+            
+    # Retrocompatibilidad con SHA-256 antiguo o texto plano
+    if hash_sha256(password_plain) == password_hashed or password_plain == password_hashed:
+        return True
+        
+    return False
 
 def get_connection():
     return sqlite3.connect(DB_NAME)
 
 def init_db():
-    """Inicializa la base de datos, aplica migraciones y crea al administrador mediante variables de entorno."""
+    """Inicializa la BD, aplica migraciones y actualiza la cuenta del Administrador."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -65,25 +80,31 @@ def init_db():
     )
     """)
 
-    # Crear Administrador principal leyendo la contraseña desde variable de entorno .env
-    cursor.execute("SELECT COUNT(*) FROM usuarios WHERE email = ?", ("admin@plurione.com",))
-    if cursor.fetchone()[0] == 0:
-        admin_email = "admin@plurione.com"
-        admin_raw_pass = os.getenv("ADMIN_INITIAL_PASSWORD", "admin123")
+    # Inicializar o reparar contraseña del Administrador principal
+    admin_email = "admin@plurione.com"
+    admin_raw_pass = os.getenv("ADMIN_INITIAL_PASSWORD", "admin123")
+    
+    cursor.execute("SELECT id, password FROM usuarios WHERE email = ?", (admin_email,))
+    row = cursor.fetchone()
+    
+    if not row:
         admin_pass = hash_password(admin_raw_pass)
-        admin_nombre = "Valeria (Administrador)"
-        admin_rol = "Director Financiero (CFO)"
-
         cursor.execute("""
             INSERT INTO usuarios (email, password, nombre, rol, estatus)
             VALUES (?, ?, ?, ?, ?)
-        """, (admin_email, admin_pass, admin_nombre, admin_rol, "Activo"))
+        """, (admin_email, admin_pass, "Valeria (Administrador)", "Director Financiero (CFO)", "Activo"))
+    else:
+        user_id, current_hash = row
+        # Si el administrador tenía una contraseña antigua (SHA-256), actualizarla a bcrypt
+        if not (current_hash.startswith("$2a$") or current_hash.startswith("$2b$")):
+            new_hash = hash_password(admin_raw_pass)
+            cursor.execute("UPDATE usuarios SET password = ? WHERE id = ?", (new_hash, user_id))
 
     conn.commit()
     conn.close()
 
 def autenticar_usuario(email: str, password_plain: str):
-    """Autentica a un usuario activo comparando la contraseña con hash bcrypt."""
+    """Autentica a un usuario y migra automáticamente su hash antiguo a bcrypt."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -93,14 +114,20 @@ def autenticar_usuario(email: str, password_plain: str):
     """, (email,))
     
     row = cursor.fetchone()
-    conn.close()
 
     if row:
         user_id, u_email, u_pass_hash, u_nombre, u_rol, u_estatus = row
         if u_estatus == "Inactivo":
+            conn.close()
             return {"error": "El usuario se encuentra dado de baja (Inactivo). Contacte al administrador."}
         
         if verificar_password(password_plain, u_pass_hash):
+            # Si el usuario ingresó con formato antiguo, actualizar su hash a bcrypt en SQLite
+            if not (u_pass_hash.startswith("$2a$") or u_pass_hash.startswith("$2b$")):
+                new_bcrypt_hash = hash_password(password_plain)
+                cursor.execute("UPDATE usuarios SET password = ? WHERE id = ?", (new_bcrypt_hash, user_id))
+                conn.commit()
+            conn.close()
             return {
                 "id": user_id,
                 "email": u_email,
@@ -108,10 +135,12 @@ def autenticar_usuario(email: str, password_plain: str):
                 "rol": u_rol,
                 "estatus": u_estatus
             }
+    
+    conn.close()
     return None
 
 def registrar_usuario(email: str, password_plain: str, nombre: str, rol: str, estatus: str = "Activo"):
-    """Registra un nuevo usuario aplicando cifrado bcrypt a la contraseña."""
+    """Registra un nuevo usuario cifrando su contraseña con bcrypt."""
     conn = get_connection()
     cursor = conn.cursor()
     
@@ -123,13 +152,13 @@ def registrar_usuario(email: str, password_plain: str, nombre: str, rol: str, es
         """, (email, pass_hashed, nombre, rol, estatus))
         conn.commit()
         conn.close()
-        return True, "Usuario creado exitosamente."
+        return True, "Usuario registrado exitosamente."
     except sqlite3.IntegrityError:
         conn.close()
         return False, "El correo electrónico ya se encuentra registrado."
 
 def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus: str, nueva_password: str = None):
-    """Actualiza la información de un usuario existente con hashing dinámico."""
+    """Actualiza la información de un usuario registrado."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -154,7 +183,7 @@ def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus:
         return False, f"Error al actualizar usuario: {e}"
 
 def eliminar_usuario(user_id: int):
-    """Elimina un usuario por su ID mediante consulta SQL parametrizada."""
+    """Elimina definitivamente a un usuario por su ID."""
     conn = get_connection()
     cursor = conn.cursor()
     try:

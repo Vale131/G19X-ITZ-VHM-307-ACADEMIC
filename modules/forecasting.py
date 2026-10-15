@@ -2,172 +2,193 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
-def generar_pronostico_real(df_historico, dias_horizonte=30, retraso_cobro=0, escenario="Base", saldo_inicial_base=654121.0):
+def calcular_metricas_error(df_hist: pd.DataFrame):
     """
-    Calcula una predicción estadística basada en tendencia, estacionalidad diaria 
-    e intervalos de confianza a partir del histórico real.
+    Realiza una validación cruzada (Holdout Validation) reservando las últimas 2 semanas de datos reales
+    para calcular las métricas de precisión MAE (Mean Absolute Error) y MAPE (Mean Absolute Percentage Error).
     """
-    if df_historico is None or len(df_historico) < 7:
-        fechas_base = pd.date_range(end=pd.Timestamp.today(), periods=60)
-        df = pd.DataFrame({
+    if df_hist.empty or len(df_hist) < 14:
+        return {"mae": 0.0, "mape": 0.0, "status": "Insuficientes datos históricos"}
+
+    df_clean = df_hist.sort_values('ds').copy()
+    
+    # Reservar las últimas 14 filas como conjunto de prueba
+    train = df_clean.iloc[:-14]
+    test = df_clean.iloc[-14:].copy()
+
+    # Promedios históricos por día de la semana en train
+    train['dayofweek'] = train['ds'].dt.dayofweek
+    avg_rev = train.groupby('dayofweek')['Ingresos'].mean().to_dict()
+    avg_exp = train.groupby('dayofweek')['Egresos'].mean().to_dict()
+
+    test['dayofweek'] = test['ds'].dt.dayofweek
+    test['pred_neto'] = test['dayofweek'].map(avg_rev) - test['dayofweek'].map(avg_exp)
+    test['real_neto'] = test['Ingresos'] - test['Egresos']
+
+    # Cálculo de MAE y MAPE
+    mae = np.mean(np.abs(test['real_neto'] - test['pred_neto']))
+    
+    # Evitar división por cero
+    denom = np.where(np.abs(test['real_neto']) == 0, 1.0, np.abs(test['real_neto']))
+    mape = np.mean(np.abs((test['real_neto'] - test['pred_neto']) / denom)) * 100
+
+    return {
+        "mae": float(mae),
+        "mape": float(mape),
+        "status": "Evaluación basada en Holdout (14 días)"
+    }
+
+def generar_pronostico_real(df_hist: pd.DataFrame, df_cartera: pd.DataFrame = None, dias_horizonte: int = 30, escenario: str = "Base", saldo_inicial: float = None):
+    """
+    Genera el pronóstico de flujo de efectivo considerando la estacionalidad semanal,
+    los factores de escenario estratégicos y la integración directa de cuentas por cobrar (CxC) 
+    y cuentas por pagar (CxP) de la cartera.
+    """
+    if df_hist.empty:
+        fechas_base = pd.date_range(start=pd.Timestamp.today(), periods=dias_horizonte, freq='D')
+        df_proy = pd.DataFrame({
             'ds': fechas_base,
-            'Ingresos': np.linspace(100000, 130000, 60) + np.sin(np.arange(60)) * 15000,
-            'Egresos': np.linspace(75000, 90000, 60) + np.cos(np.arange(60)) * 10000
+            'Ingresos': [15000.0] * dias_horizonte,
+            'Egresos': [9000.0] * dias_horizonte,
+            'Flujo_Neto': [6000.0] * dias_horizonte,
+            'Saldo_Acumulado': [6000.0 * (i + 1) for i in range(dias_horizonte)]
         })
+        return df_proy, df_hist
+
+    df_clean = df_hist.sort_values('ds').copy()
+    
+    # Determinar saldo inicial dinámico
+    if saldo_inicial is None:
+        neto_hist = df_clean['Ingresos'] - df_clean['Egresos']
+        saldo_base = neto_hist.sum()
     else:
-        df = df_historico.copy()
-        df['ds'] = pd.to_datetime(df['ds'])
-        df = df.sort_values('ds')
+        saldo_base = saldo_inicial
 
-    # 1. Extracción de Métricas Estadísticas del Histórico
-    df['dia_semana'] = df['ds'].dt.dayofweek
-    
-    ingresos_por_dia = df.groupby('dia_semana')['Ingresos'].mean()
-    egresos_por_dia = df.groupby('dia_semana')['Egresos'].mean()
-    
-    mean_ingresos = df['Ingresos'].mean()
-    mean_egresos = df['Egresos'].mean()
-    
-    std_ingresos = df['Ingresos'].std() if len(df) > 1 else mean_ingresos * 0.15
-    std_egresos = df['Egresos'].std() if len(df) > 1 else mean_egresos * 0.10
+    # Estacionalidad por día de la semana
+    df_clean['dayofweek'] = df_clean['ds'].dt.dayofweek
+    avg_rev = df_clean.groupby('dayofweek')['Ingresos'].mean().to_dict()
+    avg_exp = df_clean.groupby('dayofweek')['Egresos'].mean().to_dict()
 
-    # 2. Factor de ajuste por Escenario
-    factor_ingresos = 1.0
-    factor_egresos = 1.0
-    if escenario == "Conservador":
-        factor_ingresos = 0.82
-        factor_egresos = 1.08
-    elif escenario == "Optimista":
-        factor_ingresos = 1.18
-        factor_egresos = 0.92
+    # Factores de ajuste por escenario
+    factores = {
+        "Base": (1.00, 1.00),
+        "Optimista": (1.15, 0.90),
+        "Conservador": (0.85, 1.10)
+    }
+    f_rev, f_exp = factores.get(escenario, (1.0, 1.0))
 
-    # 3. Proyección Futura
-    ultima_fecha = df['ds'].max()
-    fechas_futuras = pd.date_range(start=ultima_fecha + pd.Timedelta(days=1), periods=dias_horizonte)
-    
-    ingresos_proj = []
-    egresos_proj = []
+    ultima_fecha = df_clean['ds'].max()
+    fechas_futuras = pd.date_range(start=ultima_fecha + pd.Timedelta(days=1), periods=dias_horizonte, freq='D')
 
-    for fecha in fechas_futuras:
-        d_sem = fecha.dayofweek
+    proyecciones = []
+    for f in fechas_futuras:
+        dow = f.dayofweek
+        ing_est = avg_rev.get(dow, 10000.0) * f_rev
+        egr_est = avg_exp.get(dow, 7000.0) * f_exp
+        proyecciones.append({
+            'ds': f,
+            'Ingresos': ing_est,
+            'Egresos': egr_est
+        })
+
+    df_proy = pd.DataFrame(proyecciones)
+
+    # INTEGRACIÓN DIRECTA DE CARTERA (CxC / CxP)
+    if df_cartera is not None and not df_cartera.empty:
+        df_cartera_clean = df_cartera.copy()
+        df_cartera_clean['fecha_vencimiento'] = pd.to_datetime(df_cartera_clean['fecha_vencimiento'], errors='coerce')
         
-        base_ing = ingresos_por_dia.get(d_sem, mean_ingresos)
-        base_egr = egresos_por_dia.get(d_sem, mean_egresos)
-        
-        ing = (0.6 * base_ing + 0.4 * mean_ingresos) * factor_ingresos
-        egr = (0.6 * base_egr + 0.4 * mean_egresos) * factor_egresos
-        
-        ingresos_proj.append(max(0, ing))
-        egresos_proj.append(max(0, egr))
+        for idx, row in df_proy.iterrows():
+            f_curr = row['ds'].strftime('%Y-%m-%d')
+            
+            cxc_monto = df_cartera_clean[
+                (df_cartera_clean['tipo'] == 'CxC') & 
+                (df_cartera_clean['fecha_vencimiento'].dt.strftime('%Y-%m-%d') == f_curr) &
+                (df_cartera_clean['estatus'] != 'Pagado')
+            ]['monto'].sum()
+            
+            cxp_monto = df_cartera_clean[
+                (df_cartera_clean['tipo'] == 'CxP') & 
+                (df_cartera_clean['fecha_vencimiento'].dt.strftime('%Y-%m-%d') == f_curr) &
+                (df_cartera_clean['estatus'] != 'Pagado')
+            ]['monto'].sum()
 
-    ingresos_proj = np.array(ingresos_proj)
-    egresos_proj = np.array(egresos_proj)
+            df_proy.at[idx, 'Ingresos'] += cxc_monto
+            df_proy.at[idx, 'Egresos'] += cxp_monto
 
-    if retraso_cobro > 0 and len(ingresos_proj) > retraso_cobro:
-        ingresos_proj = np.roll(ingresos_proj, retraso_cobro)
-        ingresos_proj[:retraso_cobro] = mean_ingresos * 0.3
+    df_proy['Flujo_Neto'] = df_proy['Ingresos'] - df_proy['Egresos']
+    df_proy['Saldo_Acumulado'] = saldo_base + df_proy['Flujo_Neto'].cumsum()
 
-    df_fut = pd.DataFrame({
-        'ds': fechas_futuras,
-        'Ingresos': ingresos_proj,
-        'Egresos': egresos_proj
-    })
-    
-    df_fut['Flujo_Neto'] = df_fut['Ingresos'] - df_fut['Egresos']
-    df_fut['Saldo_Acumulado'] = saldo_inicial_base + df_fut['Flujo_Neto'].cumsum()
-    
-    # Bandas de confianza (Límite Superior e Inferior al 95%)
-    margen_error = 1.96 * np.sqrt(np.arange(1, dias_horizonte + 1)) * (std_ingresos + std_egresos) / 2
-    df_fut['Saldo_Superior'] = df_fut['Saldo_Acumulado'] + margen_error
-    df_fut['Saldo_Inferior'] = df_fut['Saldo_Acumulado'] - margen_error
+    return df_proy, df_clean
 
-    return df_fut, df
-
-def crear_grafica_escenarios(df_proyeccion):
-    """Gráfica de Barras de Cobros/Pagos + Línea de Saldo."""
+def crear_grafica_escenarios(df_proy: pd.DataFrame):
+    """Genera la gráfica de líneas con la proyección de Ingresos y Egresos."""
     fig = go.Figure()
-
-    fig.add_trace(go.Bar(
-        x=df_proyeccion['ds'],
-        y=df_proyeccion['Ingresos'],
-        name='Cobros Proyectados',
-        marker_color='#6366F1',
-        opacity=0.85
-    ))
-
-    fig.add_trace(go.Bar(
-        x=df_proyeccion['ds'],
-        y=df_proyeccion['Egresos'],
-        name='Pagos Proyectados',
-        marker_color='#F43F5E',
-        opacity=0.85
-    ))
-
+    
     fig.add_trace(go.Scatter(
-        x=df_proyeccion['ds'],
-        y=df_proyeccion['Saldo_Acumulado'],
-        name='Saldo Neto Acumulado',
+        x=df_proy['ds'],
+        y=df_proy['Ingresos'],
         mode='lines+markers',
-        line=dict(color='#111827', width=2.5),
-        marker=dict(size=5, color='#111827')
+        name='Ingresos Proyectados',
+        line=dict(color='#16A34A', width=2.5)
+    ))
+    
+    fig.add_trace(go.Scatter(
+        x=df_proy['ds'],
+        y=df_proy['Egresos'],
+        mode='lines+markers',
+        name='Egresos Proyectados',
+        line=dict(color='#DC2626', width=2.5)
     ))
 
     fig.update_layout(
-        template="plotly_white",
-        barmode='group',
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family="Inter, sans-serif", size=12, color="#374151"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor='#F1F5F9'),
-        hovermode="x unified"
+        title="<b>Proyección Estocástica de Flujo de Efectivo</b>",
+        xaxis_title="Fecha Proyectada",
+        yaxis_title="Monto ($)",
+        height=360
     )
     return fig
 
-def crear_grafica_saldos_area(df_proyeccion, df_historico=None):
-    """Gráfica de Saldos con área sombreada e intervalo de confianza."""
+def crear_grafica_barras_categoria(df_proy: pd.DataFrame):
+    """Genera una gráfica comparativa de barras para Totales de Ingresos vs Egresos."""
+    tot_ing = df_proy['Ingresos'].sum()
+    tot_egr = df_proy['Egresos'].sum()
+    
+    fig = go.Figure(data=[
+        go.Bar(
+            x=['Ingresos Totales', 'Egresos Totales'],
+            y=[tot_ing, tot_egr],
+            marker_color=['#16A34A', '#70112F'],
+            text=[f"${tot_ing:,.2f}", f"${tot_egr:,.2f}"],
+            textposition='auto'
+        )
+    ])
+    
+    fig.update_layout(
+        title="<b>Comparativa de Entradas vs Salidas</b>",
+        yaxis_title="Monto Acumulado ($)",
+        height=360
+    )
+    return fig
+
+def crear_grafica_saldos_area(df_proy: pd.DataFrame):
+    """Genera una gráfica de área con la evolución del Saldo Acumulado."""
     fig = go.Figure()
-
-    if df_historico is not None and not df_historico.empty:
-        fig.add_trace(go.Scatter(
-            x=df_historico['ds'],
-            y=df_historico['Ingresos'] - df_historico['Egresos'],
-            name='Flujo Histórico Real',
-            mode='lines',
-            line=dict(color='#94A3B8', width=1.5)
-        ))
-
-    # Intervalo de Confianza (Se corrigió 'fill' a 'toself')
+    
     fig.add_trace(go.Scatter(
-        x=pd.concat([df_proyeccion['ds'], df_proyeccion['ds'][::-1]]),
-        y=pd.concat([df_proyeccion['Saldo_Superior'], df_proyeccion['Saldo_Inferior'][::-1]]),
-        fill='toself',
-        fillcolor='rgba(99, 102, 241, 0.10)',
-        line=dict(color='rgba(255,255,255,0)'),
-        hoverinfo="skip",
-        name='Intervalo de Confianza 95%'
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=df_proyeccion['ds'],
-        y=df_proyeccion['Saldo_Acumulado'],
-        name='Saldo Proyectado',
-        mode='lines+markers',
-        line=dict(color='#4F46E5', width=2.8, dash='dash'),
-        marker=dict(size=5, color='#4F46E5')
+        x=df_proy['ds'],
+        y=df_proy['Saldo_Acumulado'],
+        mode='lines',
+        fill='tozeroy',
+        name='Saldo Acumulado',
+        line=dict(color='#70112F', width=3),
+        fillcolor='rgba(112, 17, 47, 0.15)'
     ))
 
     fig.update_layout(
-        template="plotly_white",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family="Inter, sans-serif", size=12, color="#374151"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(l=10, r=10, t=10, b=10),
-        xaxis=dict(showgrid=False),
-        yaxis=dict(showgrid=True, gridcolor='#F1F5F9'),
-        hovermode="x unified"
+        title="<b>Evolución del Saldo de Caja Acumulado</b>",
+        xaxis_title="Fecha",
+        yaxis_title="Saldo Disponible ($)",
+        height=400
     )
     return fig

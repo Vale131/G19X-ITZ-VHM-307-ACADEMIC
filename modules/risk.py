@@ -2,81 +2,99 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-def ejecutar_simulacion_monte_carlo(df_historico, saldo_inicial=654121.0, dias_simulacion=30, num_simulaciones=1000, umbral_minimo=50000.0):
+def ejecutar_simulacion_monte_carlo(df_hist: pd.DataFrame, saldo_inicial: float = 100000.0, dias_simulacion: int = 30, num_simulaciones: int = 1000):
     """
-    Ejecuta 1,000 iteraciones estocásticas de Monte Carlo utilizando la distribución 
-    de retornos/flujos diarios del histórico real.
+    Ejecuta simulaciones estocásticas de Monte Carlo para calcular el Value at Risk (VaR)
+    y la probabilidad de caída en déficit financiero.
     """
-    if df_historico is None or len(df_historico) < 5:
-        mean_flujo = 25000.0
-        std_flujo = 18000.0
-    else:
-        flujos_diarios = df_historico['Ingresos'] - df_historico['Egresos']
-        mean_flujo = flujos_diarios.mean()
-        std_flujo = flujos_diarios.std()
+    if df_hist.empty:
+        # Valores por defecto si la base está vacía
+        return {
+            "simulaciones": np.zeros((num_simulaciones, dias_simulacion)),
+            "var_95": 0.0,
+            "var_99": 0.0,
+            "prob_deficit": 0.0,
+            "dias_simulacion": dias_simulacion
+        }
+
+    df_clean = df_hist.sort_values('ds').copy()
+    flujo_diario = df_clean['Ingresos'] - df_clean['Egresos']
+    
+    mu = flujo_diario.mean()
+    sigma = flujo_diario.std() if len(flujo_diario) > 1 else 1000.0
 
     np.random.seed(42)
-    flujos_simulados = np.random.normal(loc=mean_flujo, scale=std_flujo, size=(num_simulaciones, dias_simulacion))
+    innovaciones = np.random.normal(loc=mu, scale=sigma, size=(num_simulaciones, dias_simulacion))
     
-    trayectorias_saldo = saldo_inicial + np.cumsum(flujos_simulados, axis=1)
-    saldos_finales = trayectorias_saldo[:, -1]
+    # Trayectorias acumuladas
+    trayectorias = saldo_inicial + np.cumsum(innovaciones, axis=1)
 
-    deficit_esperado = saldo_inicial - saldos_finales
-    var_95 = np.percentile(deficit_esperado, 95)
-    var_99 = np.percentile(deficit_esperado, 99)
+    saldos_finales = trayectorias[:, -1]
     
-    casos_iliquidez = np.sum(np.min(trayectorias_saldo, axis=1) < umbral_minimo)
-    prob_iliquidez = (casos_iliquidez / num_simulaciones) * 100
+    # VaR al 95% y 99%
+    var_95 = np.percentile(saldos_finales, 5)
+    var_99 = np.percentile(saldos_finales, 1)
+    
+    # Probabilidad de saldo negativo en cualquier punto
+    minimos_por_sim = np.min(trayectorias, axis=1)
+    prob_deficit = (np.sum(minimos_por_sim < 0) / num_simulaciones) * 100
 
     return {
-        "saldos_finales": saldos_finales,
-        "trayectorias": trayectorias_saldo,
-        "var_95": max(0, var_95),
-        "var_99": max(0, var_99),
-        "prob_iliquidez": prob_iliquidez,
-        "media_saldo_final": np.mean(saldos_finales),
-        "min_saldo_final": np.min(saldos_finales)
+        "simulaciones": trayectorias,
+        "var_95": var_95,
+        "var_99": var_99,
+        "prob_deficit": prob_deficit,
+        "dias_simulacion": dias_simulacion
     }
 
-def crear_grafica_monte_carlo(res_simulacion, umbral_minimo=50000.0):
-    """Genera el histograma de distribución de saldos finales con líneas de VaR y Umbral."""
-    saldos = res_simulacion["saldos_finales"]
-
+def crear_grafica_monte_carlo(res_mc: dict):
+    """Genera la visualización gráfica de trayectorias de Monte Carlo con título dinámico."""
+    trayectorias = res_mc["simulaciones"]
+    dias = res_mc.get("dias_simulacion", 30)
+    
     fig = go.Figure()
 
-    fig.add_trace(go.Histogram(
-        x=saldos,
-        nbinsx=40,
-        name='Distribución de Saldos Finales',
-        marker_color='#6366F1',
-        opacity=0.75
-    ))
+    if trayectorias.size > 0:
+        num_muestras = min(50, trayectorias.shape[0])
+        for i in range(num_muestras):
+            fig.add_trace(go.Scatter(
+                y=trayectorias[i, :],
+                mode='lines',
+                line=dict(width=0.8, color='rgba(112, 17, 47, 0.15)'),
+                showlegend=False,
+                hoverinfo='none'
+            ))
 
-    fig.add_vline(
-        x=umbral_minimo,
-        line_dash="dash",
-        line_color="#DC2626",
-        annotation_text=f"Umbral Mínimo (${umbral_minimo:,.0f})",
-        annotation_position="top left"
-    )
+        mediana = np.median(trayectorias, axis=0)
+        p5 = np.percentile(trayectorias, 5, axis=0)
+        p95 = np.percentile(trayectorias, 95, axis=0)
 
-    fig.add_vline(
-        x=res_simulacion["media_saldo_final"],
-        line_dash="solid",
-        line_color="#059669",
-        annotation_text=f"Media Estimada (${res_simulacion['media_saldo_final']:,.0f})",
-        annotation_position="top right"
-    )
+        fig.add_trace(go.Scatter(
+            y=mediana,
+            mode='lines',
+            name='Mediana Estocástica',
+            line=dict(color='#23030D', width=3)
+        ))
+
+        fig.add_trace(go.Scatter(
+            y=p5,
+            mode='lines',
+            name='Percentil 5% (Escenario Crítico)',
+            line=dict(color='#DC2626', width=2, dash='dash')
+        ))
+
+        fig.add_trace(go.Scatter(
+            y=p95,
+            mode='lines',
+            name='Percentil 95% (Escenario Favorable)',
+            line=dict(color='#16A34A', width=2, dash='dash')
+        ))
 
     fig.update_layout(
-        template="plotly_white",
-        title="Distribución Estocástica de Saldos a 30 Días (1,000 Simulaciónes)",
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(0,0,0,0)',
-        font=dict(family="Inter, sans-serif", size=12, color="#374151"),
-        xaxis_title="Saldo Final Simulado ($ MXN)",
-        yaxis_title="Frecuencia (Escenarios)",
-        margin=dict(l=10, r=10, t=40, b=10)
+        title=f"<b>Simulación Monte Carlo de Liquidez ({dias} Días)</b>",
+        xaxis_title="Días Proyectados",
+        yaxis_title="Saldo Acumulado Proyectado ($)",
+        height=380
     )
-
+    
     return fig

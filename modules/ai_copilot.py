@@ -1,61 +1,81 @@
-import os
 import streamlit as st
-from dotenv import load_dotenv
+import os
 
-load_dotenv()
+def responder_localmente(prompt: str, contexto_financiero: str) -> str:
+    """Generador de respuestas locales de respaldo en caso de desconexión."""
+    p = prompt.lower()
+    
+    if any(w in p for w in ["cómo funciona", "como funciona", "que hace", "qué hace", "guia", "instrucciones", "ayuda"]):
+        return (
+            "**Guía de Navegación de PluriOne Liquidity System:**\n\n"
+            "1. **🖼️ Cockpit Financiero:** Resume indicadores clave (Revenue, Flujo Neto, Cobertura) y permite cargar datos en CSV.\n"
+            "2. **💳 Saldos & Tesorería:** Visualiza la evolución de los saldos acumulados de caja a lo largo del tiempo.\n"
+            "3. **📋 Capital de Trabajo & Cartera:** Administra y registra Cuentas por Cobrar (CxC) y Cuentas por Pagar (CxP).\n"
+            "4. **🎲 Modelado Estocástico & VaR:** Aplica simulaciones Monte Carlo para evaluar escenarios de riesgo financiero.\n"
+            "5. **🎧 Centro de Inteligencia & IA:** Módulo de consulta asistida por IA para toma de decisiones ejecutivas.\n"
+            "6. **👥 Gestión de Usuarios:** Creación y administración de accesos institucionales."
+        )
+    elif any(w in p for w in ["var", "monte carlo", "riesgo", "simulacion", "estocastico"]):
+        return (
+            "**Análisis de Riesgo Estocástico:**\n\n"
+            f"Basado en tu contexto ({contexto_financiero}), el modelo Monte Carlo evalúa la probabilidad de caer en déficit "
+            "simulando 1,000 itinerarios estocásticos con la volatilidad histórica de tu flujo."
+        )
+    else:
+        return (
+            f"**Diagnóstico Financiero de Copiloto CFO:**\n\n"
+            f"Procesando consulta: *'{prompt}'*\n"
+            f"• **Estatus Operativo:** {contexto_financiero}\n"
+            "• **Recomendación:** Revisa el módulo de *Capital de Trabajo & Cartera* para priorizar cobros antes de comprometer nuevos gastos."
+        )
 
-SYSTEM_CFO_PROMPT = """
-Eres el "Copiloto CFO", Director Financiero Virtual de alto nivel para PluriOne S.A. de C.V.
-Tu objetivo es emitir diagnósticos prescriptivos y recomendaciones estratégicas de liquidez y capital de trabajo.
-Responde utilizando viñetas estilizadas, tono formal, ejecutivo y enfocado en accionables financieros inmediatos.
-"""
+def render_copilot(contexto_financiero=""):
+    """Renderiza la interfaz del Copiloto CFO conectada a Google AI Studio (Gemini 1.5 Flash)."""
+    st.subheader("Copiloto CFO - Asistente de Decisión Financiera (Google Gemini)")
+    st.caption("Analiza escenarios de flujo de efectivo, riesgos de liquidez y estrategias de optimización.")
 
-def generar_recomendacion_cfo_fallback(contexto_str):
-    return (
-        "📊 **Diagnóstico Prescriptivo del Copiloto CFO:**\n\n"
-        "1. **Monitoreo de Mínimos:** Se sugiere mantener una cobertura mínima de 15 días de egresos operativos en caja principal.\n"
-        "2. **Estrategia de Cobranza:** Active llamadas de seguimiento sobre las facturas de la Pestaña 3 con probabilidad menor a 0.8.\n"
-        "3. **Mitigación de Riesgo:** Si la proyección stocástica indica déficit, evalúe esquemas de factoraje o líneas de crédito revolventes."
-    )
+    api_key_env = os.getenv("OPENAI_API_KEY", "")
+    api_key_user = st.session_state.get("custom_api_key", api_key_env)
 
-def render_copilot(contexto_sistema):
-    st.subheader("👔 Copiloto Financiero (CFO Virtual IA)")
-    st.caption("Asesoría estratégica en tiempo real alineada con el saldo de tesorería y escenarios 'What-If'.")
+    if not api_key_user:
+        st.info("💡 **Conexión IA:** Ingresa tu API Key de Google AI Studio en la barra lateral en **CONFIGURACIÓN & IA**.")
 
-    if "cfo_messages" not in st.session_state:
-        st.session_state.cfo_messages = [
-            {"role": "assistant", "content": "¡Hola! Soy tu **Copiloto CFO Virtual**. He analizado el estado de tesorería de PluriOne. ¿Qué escenario o decisión estratégica deseas evaluar hoy?"}
+    if "copilot_messages" not in st.session_state:
+        st.session_state.copilot_messages = [
+            {"role": "assistant", "content": "Hola, Valeria. Soy tu **Copiloto CFO** impulsado por Google Gemini. ¿En qué decisión financiera te puedo asesorar hoy?"}
         ]
 
-    for msg in st.session_state.cfo_messages:
-        if msg["role"] == "assistant":
-            st.markdown(f'<div class="chat-bot">👔 <b>CFO Copilot:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown(f'<div class="chat-user">👤 <b>Tú:</b><br>{msg["content"]}</div>', unsafe_allow_html=True)
+    # Renderizar historial
+    for msg in st.session_state.copilot_messages:
+        role_label = "Valeria (CFO)" if msg["role"] == "user" else "Copiloto CFO"
+        st.markdown(f"**{role_label}:** {msg['content']}")
 
-    if prompt := st.chat_input("Plantea una pregunta sobre liquidez o capital de trabajo..."):
-        st.session_state.cfo_messages.append({"role": "user", "content": prompt})
-        
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key and not api_key.startswith("sk-proj-tu_clave"):
+    # Entrada de mensajes
+    if prompt := st.chat_input("Escribe tu consulta financiera o sobre la aplicación...", key="cfo_chat_input"):
+        st.session_state.copilot_messages.append({"role": "user", "content": prompt})
+
+        if api_key_user:
             try:
                 from openai import OpenAI
-                client = OpenAI(api_key=api_key)
-                prompt_completo = f"Contexto actual del sistema: {contexto_sistema}\n\nConsulta del usuario: {prompt}"
-                
+                # Conexión al endpoint OpenAI-compatible de Google AI Studio
+                client = OpenAI(
+                    api_key=api_key_user,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+                )
                 response = client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model="gemini-1.5-flash",
                     messages=[
-                        {"role": "system", "content": SYSTEM_CFO_PROMPT},
-                        {"role": "user", "content": prompt_completo}
+                        {"role": "system", "content": f"Eres un Copiloto CFO experto en tesorería y gestión de liquidez. Contexto actual de la empresa: {contexto_financiero}"},
+                        {"role": "user", "content": prompt}
                     ],
-                    temperature=0.5
+                    max_tokens=400
                 )
                 respuesta = response.choices[0].message.content
-            except Exception:
-                respuesta = generar_recomendacion_cfo_fallback(contexto_sistema)
+            except Exception as e:
+                # Fallback suave en caso de error de red o clave inválida
+                respuesta = f"⚠️ *Aviso de conexión con Google AI Studio:* {str(e)}\n\n" + responder_localmente(prompt, contexto_financiero)
         else:
-            respuesta = generar_recomendacion_cfo_fallback(contexto_sistema)
+            respuesta = responder_localmente(prompt, contexto_financiero)
 
-        st.session_state.cfo_messages.append({"role": "assistant", "content": respuesta})
+        st.session_state.copilot_messages.append({"role": "assistant", "content": respuesta})
         st.rerun()
