@@ -1,142 +1,205 @@
 import sqlite3
-import hashlib
 import pandas as pd
+import bcrypt
+import os
 
 DB_NAME = "flujo_efectivo.db"
 
 def hash_password(password: str) -> str:
-    """Encripta la contraseña utilizando SHA-256."""
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+    """Genera un hash seguro utilizando el algoritmo bcrypt con sal incorporada."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def verificar_password(password_plain: str, password_hashed: str) -> bool:
+    """Verifica si la contraseña ingresada coincide con el hash bcrypt almacenado."""
+    try:
+        return bcrypt.checkpw(password_plain.encode('utf-8'), password_hashed.encode('utf-8'))
+    except Exception:
+        # Respaldo para compatibilidad previa en caso de hashes antiguos
+        return password_plain == password_hashed
+
+def get_connection():
+    return sqlite3.connect(DB_NAME)
 
 def init_db():
-    """Inicializa la base de datos SQLite con las tablas de histórico, cartera y usuarios."""
-    conn = sqlite3.connect(DB_NAME)
+    """Inicializa la base de datos, aplica migraciones y crea al administrador mediante variables de entorno."""
+    conn = get_connection()
     cursor = conn.cursor()
-    
-    # Tabla de Histórico
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS historico (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            ds TEXT UNIQUE,
-            ingresos REAL,
-            egresos REAL
-        )
-    """)
-    
-    # Tabla de Cartera CxC / CxP
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS cartera (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha TEXT,
-            monto REAL,
-            tipo TEXT,
-            probabilidad REAL,
-            descripcion TEXT
-        )
-    """)
 
     # Tabla de Usuarios
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS usuarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE,
-            password_hash TEXT,
-            nombre TEXT,
-            rol TEXT
-        )
+    CREATE TABLE IF NOT EXISTS usuarios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        nombre TEXT NOT NULL,
+        rol TEXT NOT NULL,
+        estatus TEXT DEFAULT 'Activo'
+    )
     """)
-    
-    # Insertar usuario administrador por defecto si no existen usuarios
-    cursor.execute("SELECT COUNT(*) FROM usuarios")
+
+    cursor.execute("PRAGMA table_info(usuarios)")
+    columnas = [row[1] for row in cursor.fetchall()]
+    if "estatus" not in columnas:
+        cursor.execute("ALTER TABLE usuarios ADD COLUMN estatus TEXT DEFAULT 'Activo'")
+
+    # Tabla de Histórico de Flujo
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS historico_flujo (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ds TEXT NOT NULL,
+        Ingresos REAL NOT NULL,
+        Egresos REAL NOT NULL
+    )
+    """)
+
+    # Tabla de Cartera CxC / CxP
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS cartera (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo TEXT NOT NULL,
+        cliente_proveedor TEXT NOT NULL,
+        monto REAL NOT NULL,
+        fecha_vencimiento TEXT NOT NULL,
+        estatus TEXT NOT NULL
+    )
+    """)
+
+    # Crear Administrador principal leyendo la contraseña desde variable de entorno .env
+    cursor.execute("SELECT COUNT(*) FROM usuarios WHERE email = ?", ("admin@plurione.com",))
     if cursor.fetchone()[0] == 0:
-        default_user = "admin@plurione.com"
-        default_pass = hash_password("PluriOne2026!")
-        cursor.execute(
-            "INSERT INTO usuarios (email, password_hash, nombre, rol) VALUES (?, ?, ?, ?)",
-            (default_user, default_pass, "Director Financiero (CFO)", "Administrador")
-        )
+        admin_email = "admin@plurione.com"
+        admin_raw_pass = os.getenv("ADMIN_INITIAL_PASSWORD", "admin123")
+        admin_pass = hash_password(admin_raw_pass)
+        admin_nombre = "Valeria (Administrador)"
+        admin_rol = "Director Financiero (CFO)"
+
+        cursor.execute("""
+            INSERT INTO usuarios (email, password, nombre, rol, estatus)
+            VALUES (?, ?, ?, ?, ?)
+        """, (admin_email, admin_pass, admin_nombre, admin_rol, "Activo"))
 
     conn.commit()
     conn.close()
 
-def autenticar_usuario(email, password):
-    """Verifica si las credenciales ingresadas coinciden con SQLite."""
-    conn = sqlite3.connect(DB_NAME)
+def autenticar_usuario(email: str, password_plain: str):
+    """Autentica a un usuario activo comparando la contraseña con hash bcrypt."""
+    conn = get_connection()
     cursor = conn.cursor()
-    pass_hash = hash_password(password)
+
+    cursor.execute("""
+        SELECT id, email, password, nombre, rol, estatus FROM usuarios
+        WHERE email = ?
+    """, (email,))
     
-    cursor.execute(
-        "SELECT email, nombre, rol FROM usuarios WHERE email = ? AND password_hash = ?",
-        (email.strip().lower(), pass_hash)
-    )
-    usuario = cursor.fetchone()
+    row = cursor.fetchone()
     conn.close()
-    
-    if usuario:
-        return {"email": usuario[0], "nombre": usuario[1], "rol": usuario[2]}
+
+    if row:
+        user_id, u_email, u_pass_hash, u_nombre, u_rol, u_estatus = row
+        if u_estatus == "Inactivo":
+            return {"error": "El usuario se encuentra dado de baja (Inactivo). Contacte al administrador."}
+        
+        if verificar_password(password_plain, u_pass_hash):
+            return {
+                "id": user_id,
+                "email": u_email,
+                "nombre": u_nombre,
+                "rol": u_rol,
+                "estatus": u_estatus
+            }
     return None
 
-def registrar_usuario(email, password, nombre, rol="Analista Financiero"):
-    """Registra un nuevo usuario en la base de datos SQLite con contraseña cifrada."""
-    conn = sqlite3.connect(DB_NAME)
+def registrar_usuario(email: str, password_plain: str, nombre: str, rol: str, estatus: str = "Activo"):
+    """Registra un nuevo usuario aplicando cifrado bcrypt a la contraseña."""
+    conn = get_connection()
     cursor = conn.cursor()
-    pass_hash = hash_password(password)
+    
     try:
-        cursor.execute(
-            "INSERT INTO usuarios (email, password_hash, nombre, rol) VALUES (?, ?, ?, ?)",
-            (email.strip().lower(), pass_hash, nombre.strip(), rol)
-        )
+        pass_hashed = hash_password(password_plain)
+        cursor.execute("""
+            INSERT INTO usuarios (email, password, nombre, rol, estatus)
+            VALUES (?, ?, ?, ?, ?)
+        """, (email, pass_hashed, nombre, rol, estatus))
         conn.commit()
         conn.close()
-        return True, "¡Usuario registrado exitosamente! Ya puede iniciar sesión."
+        return True, "Usuario creado exitosamente."
     except sqlite3.IntegrityError:
         conn.close()
         return False, "El correo electrónico ya se encuentra registrado."
+
+def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus: str, nueva_password: str = None):
+    """Actualiza la información de un usuario existente con hashing dinámico."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        if nueva_password and nueva_password.strip():
+            pass_hashed = hash_password(nueva_password)
+            cursor.execute("""
+                UPDATE usuarios
+                SET email = ?, nombre = ?, rol = ?, estatus = ?, password = ?
+                WHERE id = ?
+            """, (email, nombre, rol, estatus, pass_hashed, user_id))
+        else:
+            cursor.execute("""
+                UPDATE usuarios
+                SET email = ?, nombre = ?, rol = ?, estatus = ?
+                WHERE id = ?
+            """, (email, nombre, rol, estatus, user_id))
+        conn.commit()
+        conn.close()
+        return True, "Usuario actualizado correctamente."
     except Exception as e:
         conn.close()
-        return False, f"Error al registrar el usuario: {e}"
+        return False, f"Error al actualizar usuario: {e}"
+
+def eliminar_usuario(user_id: int):
+    """Elimina un usuario por su ID mediante consulta SQL parametrizada."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM usuarios WHERE id = ?", (user_id,))
+        conn.commit()
+        conn.close()
+        return True, "Usuario eliminado correctamente."
+    except Exception as e:
+        conn.close()
+        return False, f"Error al eliminar usuario: {e}"
+
+def obtener_usuarios_db():
+    conn = get_connection()
+    try:
+        df = pd.read_sql("SELECT id, email, nombre, rol, estatus FROM usuarios", conn)
+    except Exception:
+        df = pd.DataFrame(columns=['id', 'email', 'nombre', 'rol', 'estatus'])
+    conn.close()
+    return df
 
 def guardar_historico_db(df):
-    if df is None or df.empty:
-        return
-    df_clean = df.copy()
-    df_clean['ds'] = pd.to_datetime(df_clean['ds']).dt.strftime('%Y-%m-%d')
-    col_map = {col: col.capitalize() for col in df_clean.columns}
-    df_clean = df_clean.rename(columns=col_map)
-    
-    if set(['Ds', 'Ingresos', 'Egresos']).issubset(df_clean.columns):
-        df_save = pd.DataFrame({
-            'ds': df_clean['Ds'],
-            'ingresos': df_clean['Ingresos'],
-            'egresos': df_clean['Egresos']
-        })
-        conn = sqlite3.connect(DB_NAME)
-        df_save.to_sql("historico", conn, if_exists="replace", index=False)
-        conn.close()
+    conn = get_connection()
+    df.to_sql('historico_flujo', conn, if_exists='replace', index=False)
+    conn.close()
 
 def obtener_historico_db():
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_connection()
     try:
-        df = pd.read_sql("SELECT ds, ingresos AS Ingresos, egresos AS Egresos FROM historico ORDER BY ds ASC", conn)
-        if not df.empty:
-            df['ds'] = pd.to_datetime(df['ds'])
+        df = pd.read_sql("SELECT ds, Ingresos, Egresos FROM historico_flujo", conn)
+        df['ds'] = pd.to_datetime(df['ds'])
     except Exception:
-        df = pd.DataFrame()
+        df = pd.DataFrame(columns=['ds', 'Ingresos', 'Egresos'])
+    conn.close()
+    return df
+
+def obtener_cartera_db():
+    conn = get_connection()
+    try:
+        df = pd.read_sql("SELECT * FROM cartera", conn)
+    except Exception:
+        df = pd.DataFrame(columns=['id', 'tipo', 'cliente_proveedor', 'monto', 'fecha_vencimiento', 'estatus'])
     conn.close()
     return df
 
 def guardar_cartera_db(df):
-    if df is None or df.empty:
-        return
-    conn = sqlite3.connect(DB_NAME)
-    df.to_sql("cartera", conn, if_exists="replace", index=False)
+    conn = get_connection()
+    df.to_sql('cartera', conn, if_exists='replace', index=False)
     conn.close()
-
-def obtener_cartera_db():
-    conn = sqlite3.connect(DB_NAME)
-    try:
-        df = pd.read_sql("SELECT fecha, monto, tipo, probabilidad, descripcion FROM cartera", conn)
-    except Exception:
-        df = pd.DataFrame()
-    conn.close()
-    return df
