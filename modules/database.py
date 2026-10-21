@@ -1,43 +1,29 @@
 import sqlite3
 import pandas as pd
 import bcrypt
-import hashlib
 import os
 
 DB_NAME = "flujo_efectivo.db"
 
 def hash_password(password: str) -> str:
-    """Genera un hash seguro utilizando bcrypt con sal corporativa."""
+    """Genera un hash seguro utilizando bcrypt con sal incorporada."""
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
-def hash_sha256(password: str) -> str:
-    """Genera un hash SHA-256 para retrocompatibilidad con cuentas creadas anteriormente."""
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
-
 def verificar_password(password_plain: str, password_hashed: str) -> bool:
-    """Verifica contraseñas soportando bcrypt, SHA-256 legacy y texto plano."""
+    """Verifica estrictamente la contraseña contra el hash bcrypt sin respaldos en texto plano."""
     if not password_hashed:
         return False
-        
-    # Verificación de hash bcrypt
-    if password_hashed.startswith("$2a$") or password_hashed.startswith("$2b$"):
-        try:
-            return bcrypt.checkpw(password_plain.encode('utf-8'), password_hashed.encode('utf-8'))
-        except Exception:
-            return False
-            
-    # Retrocompatibilidad con SHA-256 antiguo o texto plano
-    if hash_sha256(password_plain) == password_hashed or password_plain == password_hashed:
-        return True
-        
-    return False
+    try:
+        return bcrypt.checkpw(password_plain.encode('utf-8'), password_hashed.encode('utf-8'))
+    except Exception:
+        return False
 
 def get_connection():
     return sqlite3.connect(DB_NAME)
 
 def init_db():
-    """Inicializa la BD, aplica migraciones y actualiza la cuenta del Administrador."""
+    """Inicializa la base de datos relacional SQLite y asegura el esquema unificado."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -54,8 +40,8 @@ def init_db():
     """)
 
     cursor.execute("PRAGMA table_info(usuarios)")
-    columnas = [row[1] for row in cursor.fetchall()]
-    if "estatus" not in columnas:
+    cols = [row[1] for row in cursor.fetchall()]
+    if "estatus" not in cols:
         cursor.execute("ALTER TABLE usuarios ADD COLUMN estatus TEXT DEFAULT 'Activo'")
 
     # Tabla de Histórico de Flujo
@@ -68,7 +54,7 @@ def init_db():
     )
     """)
 
-    # Tabla de Cartera CxC / CxP
+    # Tabla Unificada de Cartera (CxC / CxP)
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS cartera (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,35 +62,36 @@ def init_db():
         cliente_proveedor TEXT NOT NULL,
         monto REAL NOT NULL,
         fecha_vencimiento TEXT NOT NULL,
-        estatus TEXT NOT NULL
+        probabilidad REAL DEFAULT 1.0,
+        estatus TEXT DEFAULT 'Pendiente'
     )
     """)
 
-    # Inicializar o reparar contraseña del Administrador principal
+    cursor.execute("PRAGMA table_info(cartera)")
+    cartera_cols = [row[1] for row in cursor.fetchall()]
+    if "probabilidad" not in cartera_cols:
+        cursor.execute("ALTER TABLE cartera ADD COLUMN probabilidad REAL DEFAULT 1.0")
+
+    # Administrador inicial leyendo de .env sin clave por defecto harcodeada
     admin_email = "admin@plurione.com"
-    admin_raw_pass = os.getenv("ADMIN_INITIAL_PASSWORD", "admin123")
+    admin_raw_pass = os.getenv("ADMIN_INITIAL_PASSWORD")
     
-    cursor.execute("SELECT id, password FROM usuarios WHERE email = ?", (admin_email,))
-    row = cursor.fetchone()
-    
-    if not row:
-        admin_pass = hash_password(admin_raw_pass)
-        cursor.execute("""
-            INSERT INTO usuarios (email, password, nombre, rol, estatus)
-            VALUES (?, ?, ?, ?, ?)
-        """, (admin_email, admin_pass, "Valeria (Administrador)", "Director Financiero (CFO)", "Activo"))
+    if not admin_raw_pass:
+        print("ADVERTENCIA: La variable ADMIN_INITIAL_PASSWORD no está configurada en .env.")
     else:
-        user_id, current_hash = row
-        # Si el administrador tenía una contraseña antigua (SHA-256), actualizarla a bcrypt
-        if not (current_hash.startswith("$2a$") or current_hash.startswith("$2b$")):
-            new_hash = hash_password(admin_raw_pass)
-            cursor.execute("UPDATE usuarios SET password = ? WHERE id = ?", (new_hash, user_id))
+        cursor.execute("SELECT id FROM usuarios WHERE email = ?", (admin_email,))
+        if not cursor.fetchone():
+            admin_pass = hash_password(admin_raw_pass)
+            cursor.execute("""
+                INSERT INTO usuarios (email, password, nombre, rol, estatus)
+                VALUES (?, ?, ?, ?, ?)
+            """, (admin_email, admin_pass, "Valeria (Administrador)", "Director Financiero (CFO)", "Activo"))
 
     conn.commit()
     conn.close()
 
 def autenticar_usuario(email: str, password_plain: str):
-    """Autentica a un usuario y migra automáticamente su hash antiguo a bcrypt."""
+    """Autentica a un usuario comparando estrictamente el hash bcrypt."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -114,20 +101,14 @@ def autenticar_usuario(email: str, password_plain: str):
     """, (email,))
     
     row = cursor.fetchone()
+    conn.close()
 
     if row:
         user_id, u_email, u_pass_hash, u_nombre, u_rol, u_estatus = row
         if u_estatus == "Inactivo":
-            conn.close()
-            return {"error": "El usuario se encuentra dado de baja (Inactivo). Contacte al administrador."}
+            return {"error": "El usuario se encuentra inactivo. Contacte al administrador."}
         
         if verificar_password(password_plain, u_pass_hash):
-            # Si el usuario ingresó con formato antiguo, actualizar su hash a bcrypt en SQLite
-            if not (u_pass_hash.startswith("$2a$") or u_pass_hash.startswith("$2b$")):
-                new_bcrypt_hash = hash_password(password_plain)
-                cursor.execute("UPDATE usuarios SET password = ? WHERE id = ?", (new_bcrypt_hash, user_id))
-                conn.commit()
-            conn.close()
             return {
                 "id": user_id,
                 "email": u_email,
@@ -135,15 +116,11 @@ def autenticar_usuario(email: str, password_plain: str):
                 "rol": u_rol,
                 "estatus": u_estatus
             }
-    
-    conn.close()
     return None
 
 def registrar_usuario(email: str, password_plain: str, nombre: str, rol: str, estatus: str = "Activo"):
-    """Registra un nuevo usuario cifrando su contraseña con bcrypt."""
     conn = get_connection()
     cursor = conn.cursor()
-    
     try:
         pass_hashed = hash_password(password_plain)
         cursor.execute("""
@@ -158,7 +135,6 @@ def registrar_usuario(email: str, password_plain: str, nombre: str, rol: str, es
         return False, "El correo electrónico ya se encuentra registrado."
 
 def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus: str, nueva_password: str = None):
-    """Actualiza la información de un usuario registrado."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -168,7 +144,7 @@ def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus:
                 UPDATE usuarios
                 SET email = ?, nombre = ?, rol = ?, estatus = ?, password = ?
                 WHERE id = ?
-            """, (email, nombre, rol, estatus, pass_hashed, user_id))
+            """, (email, pass_hashed, nombre, rol, estatus, user_id))
         else:
             cursor.execute("""
                 UPDATE usuarios
@@ -183,7 +159,6 @@ def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus:
         return False, f"Error al actualizar usuario: {e}"
 
 def eliminar_usuario(user_id: int):
-    """Elimina definitivamente a un usuario por su ID."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -224,7 +199,7 @@ def obtener_cartera_db():
     try:
         df = pd.read_sql("SELECT * FROM cartera", conn)
     except Exception:
-        df = pd.DataFrame(columns=['id', 'tipo', 'cliente_proveedor', 'monto', 'fecha_vencimiento', 'estatus'])
+        df = pd.DataFrame(columns=['id', 'tipo', 'cliente_proveedor', 'monto', 'fecha_vencimiento', 'probabilidad', 'estatus'])
     conn.close()
     return df
 
