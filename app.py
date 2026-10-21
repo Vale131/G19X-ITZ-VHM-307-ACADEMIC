@@ -55,7 +55,7 @@ else:
     with st.sidebar:
         st.markdown("""
         <div style="padding: 10px 0 15px 0; margin-bottom: 5px;">
-            <h2 style="font-size: 1.6rem; font-weight: 800; color: #FCD34D; letter-spacing: -0.02em; margin:0;">// PLURION</h2>
+            <h2 style="font-size: 1.6rem; font-weight: 800; color: #FCD34D; letter-spacing: -0.02em; margin:0;">// PLURIONE</h2>
             <p style="font-size: 0.72rem; color: #FFFFFF; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; margin: 4px 0 0 0;">INTELIGENCIA DE LIQUIDEZ</p>
         </div>
         """, unsafe_allow_html=True)
@@ -108,7 +108,7 @@ else:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # Generar pronóstico pasando también la cartera
+        # Generar pronóstico pasando la cartera unificada
         df_proy_global, df_hist_actual = generar_pronostico_real(
             df_historico_db, df_cartera_db, dias_horizonte=horizonte_sel, escenario=escenario_sel
         )
@@ -183,7 +183,7 @@ else:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # SECCIÓN ACADÉMICA DE PRECISIÓN Y EVALUACIÓN DEL MODELO
+        # SECCIÓN DE PRECISIÓN Y EVALUACIÓN DEL MODELO
         c_acc1, c_acc2 = st.columns([1, 1])
         with c_acc1:
             with st.container(border=True):
@@ -198,9 +198,9 @@ else:
         with c_acc2:
             with st.container(border=True):
                 st.markdown("##### **Integración de Cartera en Proyección**")
-                cxc_activas = len(df_cartera_db[df_cartera_db['tipo'] == 'CxC']) if not df_cartera_db.empty else 0
-                cxp_activas = len(df_cartera_db[df_cartera_db['tipo'] == 'CxP']) if not df_cartera_db.empty else 0
-                st.caption("Cuentas por cobrar y por pagar integradas automáticamente en sus fechas de vencimiento.")
+                cxc_activas = len(df_cartera_db[df_cartera_db['tipo'].str.contains('CxC|Cobro', case=False, na=False)]) if not df_cartera_db.empty else 0
+                cxp_activas = len(df_cartera_db[df_cartera_db['tipo'].str.contains('CxP|Pago', case=False, na=False)]) if not df_cartera_db.empty else 0
+                st.caption("Cuentas por cobrar y por pagar integradas automáticamente ponderadas por probabilidad.")
                 p_a, p_b = st.columns(2)
                 with p_a:
                     st.metric(label="Cobros Pendientes (CxC)", value=f"{cxc_activas} registros")
@@ -267,6 +267,17 @@ else:
         res_mc = ejecutar_simulacion_monte_carlo(
             df_historico_db, saldo_inicial=s_inicial_global, dias_simulacion=horizonte_sel
         )
+        
+        # Tarjetas de Riesgo VaR
+        k_v1, k_v2, k_v3 = st.columns(3)
+        with k_v1:
+            st.metric("Value at Risk (VaR 95%)", f"${res_mc['var_95']:,.2f}")
+        with k_v2:
+            st.metric("Value at Risk (VaR 99%)", f"${res_mc['var_99']:,.2f}")
+        with k_v3:
+            st.metric("Probabilidad de Déficit", f"{res_mc['prob_deficit']:.2f}%")
+
+        st.markdown("<br>", unsafe_allow_html=True)
         with st.container(border=True):
             fig_mc = crear_grafica_monte_carlo(res_mc)
             fig_mc = aplicar_estilo_grafica(fig_mc)
@@ -340,12 +351,18 @@ else:
                                     st.markdown(f"##### **Editar perfil de:** {u_nombre}")
                                     e_email = st.text_input("Correo Electrónico", value=u_email, key=f"e_mail_{u_id}")
                                     e_nombre = st.text_input("Nombre Completo", value=u_nombre, key=f"e_nom_{u_id}")
-                                    e_rol = st.selectbox(
-                                        "Rol Asignado", 
-                                        ["Director Financiero (CFO)", "Analista de Tesorería", "Auditor de Riesgo"],
-                                        index=0 if "CFO" in u_rol else 1,
-                                        key=f"e_rol_{u_id}"
-                                    )
+                                    
+                                    # Selección dinámica de rol preservando la opción previa
+                                    roles_opciones = ["Director Financiero (CFO)", "Analista de Tesorería", "Auditor de Riesgo"]
+                                    if "CFO" in u_rol or "Director" in u_rol:
+                                        idx_rol = 0
+                                    elif "Auditor" in u_rol:
+                                        idx_rol = 2
+                                    else:
+                                        idx_rol = 1
+
+                                    e_rol = st.selectbox("Rol Asignado", roles_opciones, index=idx_rol, key=f"e_rol_{u_id}")
+                                    
                                     e_estatus = st.radio(
                                         "Estatus de Acceso:",
                                         ["Activo", "Inactivo"],
