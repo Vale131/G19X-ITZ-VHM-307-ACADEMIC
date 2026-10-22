@@ -1,11 +1,11 @@
-# 💼 PluriOne | Executive Liquidity & Treasury Intelligence System
+#  PluriOne | Executive Liquidity & Treasury Intelligence System
 
 > **Estándar Académico & Evaluación:** `G19X-ITZ-VHM-307-ACADEMIC`  
 > **Plataforma:** Sistema Predictivo de Flujo de Efectivo, Tesorería y Gestión de Riesgo Financiero.
 
 ---
 
-## 🎯 1. Visión General & Problema que Resuelve
+##  1. Visión General & Problema que Resuelve
 
 Las pequeñas y medianas empresas con frecuencia enfrentan problemas de liquidez por falta de visibilidad sobre sus flujos de caja futuros, la falta de integración entre sus cuentas por cobrar/pagar y la incapacidad de simular escenarios de riesgo operativo.
 
@@ -18,7 +18,7 @@ Las pequeñas y medianas empresas con frecuencia enfrentan problemas de liquidez
 
 ---
 
-## 🏗️ 2. Arquitectura del Sistema
+##  2. Arquitectura del Sistema
 
 El proyecto sigue un patrón de diseño modular limpio donde la interfaz de usuario (`app.py`) orquesta la ejecución, separando la lógica en módulos independientes:
 
