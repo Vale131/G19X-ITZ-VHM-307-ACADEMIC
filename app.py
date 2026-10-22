@@ -124,12 +124,12 @@ else:
                 data=bytes_excel,
                 file_name=f"PluriOne_Reporte_{horizonte_sel}D.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True
+                width="stretch"
             )
         except Exception:
-            st.button("⬇ Exportar Reporte Excel", disabled=True, use_container_width=True)
+            st.button("⬇ Exportar Reporte Excel", disabled=True, width="stretch")
 
-        if st.button("🚪 Cerrar Sesión", use_container_width=True):
+        if st.button("🚪 Cerrar Sesión", width="stretch"):
             st.session_state["authenticated"] = False
             st.session_state["user"] = None
             st.rerun()
@@ -214,13 +214,13 @@ else:
             with st.container(border=True):
                 fig_esc = crear_grafica_escenarios(df_proy)
                 fig_esc = aplicar_estilo_grafica(fig_esc)
-                st.plotly_chart(fig_esc, use_container_width=True)
+                st.plotly_chart(fig_esc, width="stretch")
 
         with col_g2:
             with st.container(border=True):
                 fig_bar = crear_grafica_barras_categoria(df_proy)
                 fig_bar = aplicar_estilo_grafica(fig_bar)
-                st.plotly_chart(fig_bar, use_container_width=True)
+                st.plotly_chart(fig_bar, width="stretch")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -231,7 +231,7 @@ else:
                 df_tabla_demo = df_proy[['ds', 'Ingresos', 'Egresos', 'Saldo_Acumulado']].head(6).copy()
                 df_tabla_demo['ds'] = df_tabla_demo['ds'].dt.strftime('%d %b, %Y')
                 df_tabla_demo.columns = ['Fecha', 'Ingresos ($)', 'Egresos ($)', 'Saldo ($)']
-                st.dataframe(df_tabla_demo, use_container_width=True, hide_index=True)
+                st.dataframe(df_tabla_demo, width="stretch", hide_index=True)
 
         with col_t2:
             with st.container(border=True):
@@ -243,7 +243,7 @@ else:
                     marker_colors=['#70112F', '#FCD34D']
                 )])
                 fig_donut.update_layout(height=210, margin=dict(l=10, r=10, t=10, b=10), showlegend=True, paper_bgcolor="rgba(0,0,0,0)")
-                st.plotly_chart(fig_donut, use_container_width=True)
+                st.plotly_chart(fig_donut, width="stretch")
 
     # 2. SALDOS & TESORERÍA
     elif "Saldos & Tesorería" in menu_opcion:
@@ -254,7 +254,7 @@ else:
         with st.container(border=True):
             fig_area = crear_grafica_saldos_area(df_proy_saldos)
             fig_area = aplicar_estilo_grafica(fig_area)
-            st.plotly_chart(fig_area, use_container_width=True)
+            st.plotly_chart(fig_area, width="stretch")
 
     # 3. CAPITAL DE TRABAJO & CARTERA
     elif "Capital de Trabajo & Cartera" in menu_opcion:
@@ -281,7 +281,7 @@ else:
         with st.container(border=True):
             fig_mc = crear_grafica_monte_carlo(res_mc)
             fig_mc = aplicar_estilo_grafica(fig_mc)
-            st.plotly_chart(fig_mc, use_container_width=True)
+            st.plotly_chart(fig_mc, width="stretch")
 
     # 5. CENTRO DE INTELIGENCIA & IA
     elif "Centro de Inteligencia & IA" in menu_opcion:
@@ -352,7 +352,6 @@ else:
                                     e_email = st.text_input("Correo Electrónico", value=u_email, key=f"e_mail_{u_id}")
                                     e_nombre = st.text_input("Nombre Completo", value=u_nombre, key=f"e_nom_{u_id}")
                                     
-                                    # Selección dinámica de rol preservando la opción previa
                                     roles_opciones = ["Director Financiero (CFO)", "Analista de Tesorería", "Auditor de Riesgo"]
                                     if "CFO" in u_rol or "Director" in u_rol:
                                         idx_rol = 0
@@ -372,7 +371,7 @@ else:
                                     )
                                     e_pass = st.text_input("Nueva Contraseña (dejar en blanco para conservar actual)", type="password", key=f"e_pass_{u_id}")
 
-                                    btn_guardar = st.form_submit_button("💾 Guardar Cambios", use_container_width=True)
+                                    btn_guardar = st.form_submit_button("💾 Guardar Cambios", width="stretch")
 
                                     if btn_guardar:
                                         ok, msg = actualizar_usuario(u_id, e_email, e_nombre, e_rol, e_estatus, e_pass)
@@ -390,7 +389,7 @@ else:
                                 if u_id == user_info.get('id') or u_email == "admin@plurione.com":
                                     st.info("ℹ️ Cuenta principal protegida.")
                                 else:
-                                    if st.button("🗑️ Eliminar Usuario", key=f"btn_direct_del_{u_id}", use_container_width=True):
+                                    if st.button("🗑️ Eliminar Usuario", key=f"btn_direct_del_{u_id}", width="stretch"):
                                         ok, msg = eliminar_usuario(u_id)
                                         if ok:
                                             st.success(msg)
@@ -415,7 +414,7 @@ else:
                 
                 u_estatus = st.radio("Estatus Inicial", ["Activo", "Inactivo"], horizontal=True)
 
-                btn_crear = st.form_submit_button("✨ Dar de Alta Usuario", use_container_width=True)
+                btn_crear = st.form_submit_button("✨ Dar de Alta Usuario", width="stretch")
 
                 if btn_crear:
                     if u_email and u_nombre and u_pass:

@@ -12,7 +12,7 @@ def render_modulo_cartera():
 
     with tab_ver:
         if not df_cartera.empty:
-            st.dataframe(df_cartera, use_container_width=True, hide_index=True)
+            st.dataframe(df_cartera, width="stretch", hide_index=True)
             
             c_id, c_est, c_btn = st.columns([2, 2, 2])
             with c_id:
@@ -45,7 +45,7 @@ def render_modulo_cartera():
                 estatus = st.selectbox("Estatus Inicial", ["Pendiente", "Pagado"])
 
             tipo_code = "CxC" if "Cobrar" in tipo else "CxP"
-            btn_guardar = st.form_submit_button("Guardar en Cartera")
+            btn_guardar = st.form_submit_button("Guardar en Cartera", width="stretch")
 
             if btn_guardar:
                 if cliente_prov.strip():
