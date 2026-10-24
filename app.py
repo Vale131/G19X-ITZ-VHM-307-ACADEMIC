@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import html
 from dotenv import load_dotenv
 
 from modules.database import (
@@ -12,7 +13,7 @@ from modules.database import (
 from modules.forecasting import (
     generar_pronostico_real, calcular_metricas_error,
     crear_grafica_escenarios, crear_grafica_barras_categoria, 
-    crear_grafica_saldos_area
+    crear_grafica_saldos_area, calcular_mejora_vs_baseline
 )
 from modules.cxc_cxp import render_modulo_cartera
 from modules.risk import ejecutar_simulacion_monte_carlo, crear_grafica_monte_carlo
@@ -44,7 +45,7 @@ else:
     df_historico_db = obtener_historico_db()
     df_cartera_db = obtener_cartera_db()
 
-    # Determinar perfil administrador
+    # Determinar perfil administrador (CFO / Admin)
     rol_actual = str(user_info.get('rol', '')).lower()
     email_actual = str(user_info.get('email', '')).lower()
     es_admin = ("administrador" in rol_actual) or ("cfo" in rol_actual) or (email_actual == "admin@plurione.com")
@@ -64,12 +65,16 @@ else:
         rol_user = user_info.get('rol', 'Usuario')
         inicial = nombre_user[0].upper() if nombre_user else 'U'
 
+        # Escape seguro de cadenas para evitar inyección HTML
+        safe_nombre = html.escape(str(nombre_user))
+        safe_rol = html.escape(str(rol_user))
+
         st.markdown(f"""
         <div class="sidebar-user-card">
             <div class="sidebar-user-avatar">{inicial}</div>
             <div>
-                <div class="sidebar-user-name">{nombre_user}</div>
-                <div class="sidebar-user-role">{rol_user}</div>
+                <div class="sidebar-user-name">{safe_nombre}</div>
+                <div class="sidebar-user-role">{safe_rol}</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -183,18 +188,28 @@ else:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # SECCIÓN DE PRECISIÓN Y EVALUACIÓN DEL MODELO
+        # SECCIÓN DE PRECISIÓN Y EVALUACIÓN DEL MODELO CON COMPARACIÓN BASELINE
         c_acc1, c_acc2 = st.columns([1, 1])
         with c_acc1:
             with st.container(border=True):
-                st.markdown("##### **Precisión del Modelo Predictivo (MAE / MAPE)**")
-                st.caption(f"Validación mediante Holdout sobre datos históricos reales: *{metricas_err['status']}*")
-                m_a, m_b = st.columns(2)
+                st.markdown("##### **Precisión del Modelo Predictivo (MAE / MAPE / Baseline)**")
+                st.caption(f"Validación mediante Holdout sobre datos históricos reales: *{metricas_err.get('status', 'Calibrado')}*")
+                
+                # Cálculo de la mejora frente al promedio simple (Baseline)
+                try:
+                    mejora_bs = calcular_mejora_vs_baseline(df_historico_db, df_proy)
+                    str_mejora = f"{mejora_bs:+.1f}%"
+                except Exception:
+                    str_mejora = "N/D"
+
+                m_a, m_b, m_c = st.columns(3)
                 with m_a:
-                    st.metric(label="MAE (Error Absoluto Medio)", value=f"${metricas_err['mae']:,.2f}")
+                    st.metric(label="MAE (Holdout 14d)", value=f"${metricas_err['mae']:,.2f}")
                 with m_b:
-                    st.metric(label="MAPE (Error Porcentual)", value=f"{metricas_err['mape']:.2f}%")
-        
+                    st.metric(label="MAPE (Error %)", value=f"{metricas_err['mape']:.2f}%")
+                with m_c:
+                    st.metric(label="vs. Baseline", value=str_mejora, help="Porcentaje de mejora del modelo estacional frente al promedio simple")
+
         with c_acc2:
             with st.container(border=True):
                 st.markdown("##### **Integración de Cartera en Proyección**")
@@ -271,11 +286,11 @@ else:
         # Tarjetas de Riesgo VaR
         k_v1, k_v2, k_v3 = st.columns(3)
         with k_v1:
-            st.metric("Value at Risk (VaR 95%)", f"${res_mc['var_95']:,.2f}")
+            st.metric("Value at Risk (VaR 95%)", f"${res_mc.get('var_95', 0):,.2f}")
         with k_v2:
-            st.metric("Value at Risk (VaR 99%)", f"${res_mc['var_99']:,.2f}")
+            st.metric("Value at Risk (VaR 99%)", f"${res_mc.get('var_99', 0):,.2f}")
         with k_v3:
-            st.metric("Probabilidad de Déficit", f"{res_mc['prob_deficit']:.2f}%")
+            st.metric("Probabilidad de Déficit", f"{res_mc.get('prob_deficit', 0):.2f}%")
 
         st.markdown("<br>", unsafe_allow_html=True)
         with st.container(border=True):
@@ -318,10 +333,10 @@ else:
                 if busqueda.strip():
                     b = busqueda.lower().strip()
                     df_filtrado = df_filtrado[
-                        df_filtrado['nombre'].str.lower().str.contains(b) |
-                        df_filtrado['email'].str.lower().str.contains(b) |
-                        df_filtrado['id'].astype(str).str.contains(b) |
-                        df_filtrado['rol'].str.lower().str.contains(b)
+                        df_filtrado['nombre'].str.lower().str.contains(b, na=False) |
+                        df_filtrado['email'].str.lower().str.contains(b, na=False) |
+                        df_filtrado['id'].astype(str).str.contains(b, na=False) |
+                        df_filtrado['rol'].str.lower().str.contains(b, na=False)
                     ]
                 
                 if filtro_estatus != "Todos":

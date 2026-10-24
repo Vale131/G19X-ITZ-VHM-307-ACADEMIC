@@ -72,7 +72,7 @@ def init_db():
     if "probabilidad" not in cartera_cols:
         cursor.execute("ALTER TABLE cartera ADD COLUMN probabilidad REAL DEFAULT 1.0")
 
-    # Administrador inicial leyendo de .env sin clave por defecto harcodeada
+    # Administrador inicial leyendo de .env sin clave por defecto hardcodeada
     admin_email = "admin@plurione.com"
     admin_raw_pass = os.getenv("ADMIN_INITIAL_PASSWORD")
     
@@ -91,7 +91,7 @@ def init_db():
     conn.close()
 
 def autenticar_usuario(email: str, password_plain: str):
-    """Autentica a un usuario comparando estrictamente el hash bcrypt."""
+    """Autentica a un usuario comparando el hash bcrypt y previniendo la enumeración de cuentas."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -105,10 +105,11 @@ def autenticar_usuario(email: str, password_plain: str):
 
     if row:
         user_id, u_email, u_pass_hash, u_nombre, u_rol, u_estatus = row
-        if u_estatus == "Inactivo":
-            return {"error": "El usuario se encuentra inactivo. Contacte al administrador."}
         
+        # 1. Se valida PRIMERO la contraseña para evitar enumeración de usuarios
         if verificar_password(password_plain, u_pass_hash):
+            if u_estatus == "Inactivo":
+                return {"error": "El usuario se encuentra inactivo. Contacte al administrador."}
             return {
                 "id": user_id,
                 "email": u_email,
@@ -135,22 +136,26 @@ def registrar_usuario(email: str, password_plain: str, nombre: str, rol: str, es
         return False, "El correo electrónico ya se encuentra registrado."
 
 def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus: str, nueva_password: str = None):
+    """Actualiza la información ordenando de forma exacta las columnas y la tupla de parámetros."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
         if nueva_password and nueva_password.strip():
             pass_hashed = hash_password(nueva_password)
+            # ORDEN DE COLUMNAS:  email=?, nombre=?, rol=?, estatus=?, password=?  WHERE id=?
+            # TUPLA DE VALORES:   (email,   nombre,   rol,   estatus,   pass_hashed, user_id)
             cursor.execute("""
                 UPDATE usuarios
                 SET email = ?, nombre = ?, rol = ?, estatus = ?, password = ?
                 WHERE id = ?
-            """, (email, pass_hashed, nombre, rol, estatus, user_id))
+            """, (email, nombre, rol, estatus, pass_hashed, user_id))
         else:
             cursor.execute("""
                 UPDATE usuarios
                 SET email = ?, nombre = ?, rol = ?, estatus = ?
                 WHERE id = ?
             """, (email, nombre, rol, estatus, user_id))
+            
         conn.commit()
         conn.close()
         return True, "Usuario actualizado correctamente."

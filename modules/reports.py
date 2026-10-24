@@ -1,33 +1,69 @@
-import io
 import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils.dataframe import dataframe_to_rows
+import io
 
-def generar_reporte_excel(df_historico, df_proyeccion, df_cartera, res_mc):
-    """
-    Genera un archivo Excel en memoria con múltiples pestañas ejecutivas.
-    """
+def generar_reporte_excel(df_historico, df_forecast, df_cartera, res_mc):
+    """Genera un libro de Excel profesional consolidado en memoria."""
+    wb = Workbook()
+    
+    # Estilos Corporativos
+    header_fill = PatternFill(start_color="6D1B2A", end_color="6D1B2A", fill_type="solid")
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    data_font = Font(name="Calibri", size=10)
+    border_thin = Border(
+        left=Side(style='thin', color='D3D3D3'),
+        right=Side(style='thin', color='D3D3D3'),
+        top=Side(style='thin', color='D3D3D3'),
+        bottom=Side(style='thin', color='D3D3D3')
+    )
+
+    # 1. Hoja de Resumen Ejecutivo y Riesgo VaR
+    ws_resumen = wb.active
+    ws_resumen.title = "Resumen & VaR"
+    ws_resumen.views.sheetView[0].showGridLines = True
+    
+    ws_resumen.append(["Métrica de Riesgo / Indicador", "Valor Calculado"])
+    ws_resumen.append(["Value at Risk 95% (VaR 95%)", res_mc.get('var_95', 0)])
+    ws_resumen.append(["Value at Risk 99% (VaR 99%)", res_mc.get('var_99', 0)])
+    
+    # CORRECCIÓN: Clave unificada prob_deficit
+    ws_resumen.append(["Probabilidad de Déficit de Caja (%)", res_mc.get('prob_deficit', 0)])
+    ws_resumen.append(["Saldo Final Esperado ($)", res_mc.get('saldo_final_esperado', 0)])
+
+    for row in ws_resumen.iter_rows(min_row=1, max_row=5, min_col=1, max_col=2):
+        for cell in row:
+            cell.font = data_font
+            cell.border = border_thin
+
+    for cell in ws_resumen[1]:
+        cell.fill = header_fill
+        cell.font = header_font
+
+    # 2. Hoja de Proyección
+    ws_proj = wb.create_sheet(title="Proyección de Flujo")
+    if not df_forecast.empty:
+        cols_proj = ['ds', 'flujo_proyectado', 'saldo_proyectado']
+        df_export_proj = df_forecast[[c for c in cols_proj if c in df_forecast.columns]]
+        for r in dataframe_to_rows(df_export_proj, index=False, header=True):
+            ws_proj.append(r)
+
+        for cell in ws_proj[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+
+    # 3. Hoja de Cartera
+    ws_cart = wb.create_sheet(title="Cartera CxC y CxP")
+    if not df_cartera.empty:
+        for r in dataframe_to_rows(df_cartera, index=False, header=True):
+            ws_cart.append(r)
+
+        for cell in ws_cart[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        # Pestaña 1: Proyección de Flujo
-        if df_proyeccion is not None and not df_proyeccion.empty:
-            df_proyeccion.to_excel(writer, sheet_name='Proyección Flujo', index=False)
-        
-        # Pestaña 2: Cartera CxC / CxP
-        if df_cartera is not None and not df_cartera.empty:
-            df_cartera.to_excel(writer, sheet_name='Cartera CxC CxP', index=False)
-
-        # Pestaña 3: Resumen de Riesgo Monte Carlo
-        if res_mc:
-            df_mc_summary = pd.DataFrame([{
-                "Métrica": "Value at Risk (VaR 95%)", "Valor MXN": res_mc.get('var_95', 0)
-            }, {
-                "Métrica": "Value at Risk (VaR 99%)", "Valor MXN": res_mc.get('var_99', 0)
-            }, {
-                "Métrica": "Probabilidad de Iliquidez (%)", "Valor MXN": res_mc.get('prob_iliquidez', 0)
-            }])
-            df_mc_summary.to_excel(writer, sheet_name='Análisis Riesgo VaR', index=False)
-
-        # Pestaña 4: Histórico Cargado
-        if df_historico is not None and not df_historico.empty:
-            df_historico.to_excel(writer, sheet_name='Histórico Creado', index=False)
-
-    return output.getvalue()
+    wb.save(output)
+    output.seek(0)
+    return output
