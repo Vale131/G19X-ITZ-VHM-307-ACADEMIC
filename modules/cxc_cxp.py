@@ -8,6 +8,13 @@ def render_modulo_cartera():
 
     df_cartera = obtener_cartera_db()
 
+    # Garantizar que la columna 'id' siempre exista en el DataFrame
+    if 'id' not in df_cartera.columns:
+        if not df_cartera.empty:
+            df_cartera.insert(0, 'id', range(1, len(df_cartera) + 1))
+        else:
+            df_cartera = pd.DataFrame(columns=['id', 'tipo', 'cliente_proveedor', 'monto', 'fecha_vencimiento', 'probabilidad', 'estatus'])
+
     tab_ver, tab_agregar = st.tabs(["📋 Cartera Registrada", "➕ Agregar Compromiso"])
 
     with tab_ver:
@@ -59,8 +66,13 @@ def render_modulo_cartera():
                     }])
                     
                     df_unido = pd.concat([df_cartera, nuevo_reg], ignore_index=True)
-                    if 'id' in df_unido.columns:
-                        df_unido['id'] = range(1, len(df_unido) + 1)
+                    
+                    # Asignación incondicional de ID para evitar pérdida de columna
+                    df_unido['id'] = range(1, len(df_unido) + 1)
+                    
+                    # Reordenar columnas para mantener 'id' al inicio
+                    cols = ['id'] + [c for c in df_unido.columns if c != 'id']
+                    df_unido = df_unido[cols]
                     
                     guardar_cartera_db(df_unido)
                     st.success("Compromiso registrado correctamente en la cartera.")
