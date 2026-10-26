@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 import html
+import os
 from dotenv import load_dotenv
 
 from modules.database import (
@@ -44,6 +45,17 @@ else:
     user_info = st.session_state.get("user", {"nombre": "Valeria (Administrador)", "rol": "Director Financiero (CFO)", "email": "admin@plurione.com"})
     df_historico_db = obtener_historico_db()
     df_cartera_db = obtener_cartera_db()
+
+    # AUTO-CARGA DE DATOS DE PRUEBA SI LA BD ESTÁ VACÍA
+    if df_historico_db.empty and os.path.exists("data/sample_flujo.csv"):
+        try:
+            df_sample = pd.read_csv("data/sample_flujo.csv")
+            if set(['ds', 'Ingresos', 'Egresos']).issubset(df_sample.columns):
+                guardar_historico_db(df_sample)
+                df_historico_db = obtener_historico_db()
+                st.toast("Datos de prueba cargados automáticamente desde data/sample_flujo.csv", icon="📊")
+        except Exception as e:
+            st.warning(f"No se pudieron precargar los datos de prueba: {e}")
 
     # Determinar perfil administrador (CFO / Admin)
     rol_actual = str(user_info.get('rol', '')).lower()
@@ -151,15 +163,17 @@ else:
         with col_s:
             st.caption(f"Horizonte: **{horizonte_sel} días** • Escenario: **{escenario_sel}**")
 
-        with st.expander("Sincronizar Archivo Histórico de Flujo (CSV)", expanded=False):
+        with st.expander("📂 Sincronizar Archivo Histórico de Flujo (CSV)", expanded=df_historico_db.empty):
             uploaded_file = st.file_uploader("Seleccionar CSV", type=["csv"], label_visibility="collapsed")
             if uploaded_file is not None:
                 try:
                     df_upload = pd.read_csv(uploaded_file)
                     if set(['ds', 'Ingresos', 'Egresos']).issubset(df_upload.columns):
                         guardar_historico_db(df_upload)
-                        st.success("Sincronizado con SQLite correctamente")
+                        st.success("¡CSV sincronizado con SQLite correctamente!")
                         st.rerun()
+                    else:
+                        st.error("El archivo CSV debe contener las columnas obligatorias: ds, Ingresos, Egresos")
                 except Exception as e:
                     st.error(f"Error al procesar CSV: {e}")
 
