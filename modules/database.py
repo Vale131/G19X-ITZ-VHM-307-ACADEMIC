@@ -142,6 +142,8 @@ def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus:
     try:
         if nueva_password and nueva_password.strip():
             pass_hashed = hash_password(nueva_password)
+            # ORDEN DE COLUMNAS:  email=?, nombre=?, rol=?, estatus=?, password=?  WHERE id=?
+            # TUPLA DE VALORES:   (email,   nombre,   rol,   estatus,   pass_hashed, user_id)
             cursor.execute("""
                 UPDATE usuarios
                 SET email = ?, nombre = ?, rol = ?, estatus = ?, password = ?
@@ -204,19 +206,42 @@ def obtener_cartera_db():
     except Exception:
         df = pd.DataFrame(columns=['id', 'tipo', 'cliente_proveedor', 'monto', 'fecha_vencimiento', 'probabilidad', 'estatus'])
     conn.close()
-    
-    # Garantizar que la columna 'id' siempre exista en el DataFrame devuelto
-    if 'id' not in df.columns:
-        if not df.empty:
-            df.insert(0, 'id', range(1, len(df) + 1))
-        else:
-            df = pd.DataFrame(columns=['id', 'tipo', 'cliente_proveedor', 'monto', 'fecha_vencimiento', 'probabilidad', 'estatus'])
     return df
 
 def guardar_cartera_db(df):
     conn = get_connection()
-    # Garantizar columna 'id' antes de reemplazar la tabla en SQLite
-    if 'id' not in df.columns and not df.empty:
-        df.insert(0, 'id', range(1, len(df) + 1))
     df.to_sql('cartera', conn, if_exists='replace', index=False)
     conn.close()
+
+def insertar_compromiso_cartera(tipo: str, cliente_proveedor: str, monto: float, fecha_vencimiento: str, probabilidad: float, estatus: str = 'Pendiente') -> bool:
+    """Inserta un registro individual en la tabla cartera usando SQL directo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO cartera (tipo, cliente_proveedor, monto, fecha_vencimiento, probabilidad, estatus)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (tipo, cliente_proveedor, monto, fecha_vencimiento, probabilidad, estatus))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        conn.close()
+        return False
+
+def actualizar_estatus_cartera(reg_id: int, nuevo_estatus: str) -> bool:
+    """Actualiza unicamente el estatus de una fila en la tabla cartera por su ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE cartera
+            SET estatus = ?
+            WHERE id = ?
+        """, (nuevo_estatus, reg_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        conn.close()
+        return False
