@@ -9,7 +9,41 @@
 
 ## 1. Visión y Estrategia del Producto
 
-### 1.1 Visión
+# Product Requirement Document (PRD) — PluriOne
+
+**Estándar Académico:** `G19X-ITZ-VHM-307-ACADEMIC`  
+**Autor:** Valeria Hernández Mendoza  
+**Institución:** Instituto Tecnológico de Zitácuaro  
+
+---
+
+## 1. Definición del Problema
+Las pequeñas y medianas empresas enfrentan severos problemas de iliquidez debido a la falta de herramientas accesibles para proyectar su flujo de caja futuro. El análisis tradicional omite la estacionalidad semanal de los ingresos/egresos y no cuantifica el riesgo implícito en el cobro diferido de las Cuentas por Cobrar (CxC) y el pago de las Cuentas por Pagar (CxP).
+
+---
+
+## 2. Definición de Usuarios y Roles (RBAC)
+* **Director Financiero (CFO):** Acceso total al Cockpit Ejecutivo, ajuste de escenarios estratégicos, gestión de usuarios institucionales y exportación de reportes.
+* **Analista de Tesorería:** Carga de histórico de caja, alta y actualización de compromisos de cartera (CxC / CxP).
+* **Auditor de Riesgo:** Consulta de simulaciones estocásticas de Monte Carlo, métricas VaR y evaluación de precisión (Holdout MAE / MAPE).
+
+---
+
+## 3. Fuera de Alcance (Out of Scope)
+* Conexión en tiempo real mediante APIs bancarias (Open Banking).
+* Emisión o timbrado de facturación electrónica (CFDI).
+* Procesamiento automatizado de transacciones multimoneda en tiempo real.
+
+---
+
+## 4. Declaración de Uso de Inteligencia Artificial
+En el desarrollo de esta suite se utilizaron asistentes de Inteligencia Artificial para:
+1. El diseño del esquema visual modular en Streamlit y paleta de colores institucional.
+2. La estructuración de consultas SQL parametrizadas para la persistencia segura de datos.
+3. La generación automatizada de pruebas unitarias y fixtures de aislamiento en `pytest`.
+
+
+### 1. Visión
 > *"Que ninguna decisión de liquidez en PluriOne dependa de la intuición de un analista: que cada decisión de inversión, cobro y pago tenga detrás un copiloto matemático auditable, cuantitativo y transparente."*
 
 El sistema resuelve la ineficiencia estructural de la tesorería corporativa mediante tres principios fundamentales:

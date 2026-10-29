@@ -76,3 +76,21 @@ A través del módulo `modules/risk.py`, el sistema ejecuta 1,000 iteraciones pe
 * Simulación Monte Carlo ejecutable en menos de 3 segundos reportando VaR 95%, VaR 99% y Probabilidad de Déficit.
 * Actualización de sintaxis de interfaz Streamlit a `width="stretch"` eliminando advertencias en consola.
 * Autenticación robusta probada con hash `bcrypt` sin fugas de información ni accesos no autorizados.
+
+# Especificación del Producto Mínimo Viable (MVP) — PluriOne
+
+## 6. Matriz de Comprobación de Objetivos MVP
+
+| Módulo | Función del MVP | Criterio de Aceptación & Método de Comprobación |
+| :--- | :--- | :--- |
+| **Ingesta de Datos** | Carga CSV & Muestra | Carga automática desde `data/sample_flujo.csv` cuando SQLite está vacía. Comprobado en `app.py`. |
+| **Proyección** | Modelo Estacional | Modelo por día de la semana que supera al promedio simple global. Comprobado vía `calcular_mejora_vs_baseline(df) > 0` en `tests/test_core.py`. |
+| **Capital de Trabajo** | Cartera Ponderada | Integración de CxC y CxP sumando/restando `monto * probabilidad`. Persistencia vía `INSERT`/`UPDATE` directos en SQL. Comprobado en `test_cartera_crud_operaciones_directas`. |
+| **Riesgo Estocástico** | Monte Carlo & VaR | Simulación basada en la proyección con escenario y cartera. Calcula VaR 95% y 99% como desviación respecto al saldo final esperado. Comprobado en `test_simulacion_monte_carlo_con_proyeccion`. |
+| **Exportación** | Reporte Excel | Descarga de archivo `.xlsx` consolidado con la clave `prob_deficit` mapeada correctamente. Comprobado vía `generar_reporte_excel()`. |
+
+---
+
+## 7. Definición Unificada de Métricas de Riesgo
+* **Saldo Final Esperado:** Promedio de los saldos acumulados finales obtenidos en las $N$ trayectorias de la simulación de Monte Carlo.
+* **Value at Risk (VaR 95% / 99%):** Pérdida máxima esperada con un nivel de confianza del 95% o 99%, calculada como la diferencia entre el saldo final esperado y el percentil 5 (para 95%) o percentil 1 (para 99%) de la distribución simulada.
