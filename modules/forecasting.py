@@ -7,11 +7,13 @@ def calcular_metricas_error(df_hist: pd.DataFrame):
     Realiza una validación cruzada (Holdout Validation) reservando las últimas 2 semanas (14 días)
     de datos reales para calcular las métricas de precisión MAE y MAPE.
     """
-    if df_hist.empty or len(df_hist) < 14:
+    if df_hist is None or df_hist.empty or len(df_hist) < 14:
         return {"mae": 0.0, "mape": 0.0, "status": "Insuficientes datos históricos (<14 días)"}
 
     df_clean = df_hist.sort_values('ds').copy()
-    train = df_clean.iloc[:-14]
+    df_clean['ds'] = pd.to_datetime(df_clean['ds'])
+    
+    train = df_clean.iloc[:-14].copy()
     test = df_clean.iloc[-14:].copy()
 
     # Estacionalidad por día de la semana sobre conjunto de entrenamiento
@@ -34,38 +36,47 @@ def calcular_metricas_error(df_hist: pd.DataFrame):
         "status": "Evaluación basada en Holdout (14 días)"
     }
 
-def calcular_mejora_vs_baseline(df_hist: pd.DataFrame):
+def calcular_mejora_vs_baseline(df_hist: pd.DataFrame, dias_holdout: int = 14) -> float:
     """
-    Compara la precisión del modelo estacional estocástico frente a un modelo Baseline
-    de promedio móvil simple para determinar el porcentaje de optimización.
+    Compara la precisión (MAE) del modelo estacional diario frente a un modelo Baseline
+    de promedio simple global sobre un conjunto de prueba (Holdout de 14 días).
+    Acepta únicamente el DataFrame histórico.
     """
-    if df_hist.empty or len(df_hist) < 14:
+    if df_hist is None or df_hist.empty or len(df_hist) < (dias_holdout + 7):
         return 0.0
 
     df_clean = df_hist.sort_values('ds').copy()
-    train = df_clean.iloc[:-14]
-    test = df_clean.iloc[-14:].copy()
+    df_clean['ds'] = pd.to_datetime(df_clean['ds'])
+    df_clean['Flujo_Neto'] = df_clean['Ingresos'] - df_clean['Egresos']
 
-    # Promedio simple como Modelo Baseline
-    prom_neto_base = (train['Ingresos'] - train['Egresos']).mean()
-    test['real_neto'] = test['Ingresos'] - test['Egresos']
+    # División Holdout
+    train = df_clean.iloc[:-dias_holdout].copy()
+    test = df_clean.iloc[-dias_holdout:].copy()
 
-    mae_baseline = np.mean(np.abs(test['real_neto'] - prom_neto_base))
-    res_modelo = calcular_metricas_error(df_hist)
-    mae_modelo = res_modelo['mae']
+    # 1. Baseline: Promedio simple global del flujo neto
+    promedio_baseline = train['Flujo_Neto'].mean()
+    mae_baseline = np.mean(np.abs(test['Flujo_Neto'] - promedio_baseline))
+
+    # 2. Modelo Estacional: Promedio por día de la semana
+    train['dayofweek'] = train['ds'].dt.dayofweek
+    avg_dow = train.groupby('dayofweek')['Flujo_Neto'].mean()
+
+    test['dayofweek'] = test['ds'].dt.dayofweek
+    test['pred_estacional'] = test['dayofweek'].map(avg_dow).fillna(promedio_baseline)
+    mae_modelo = np.mean(np.abs(test['Flujo_Neto'] - test['pred_estacional']))
 
     if mae_baseline == 0:
         return 0.0
 
-    mejora = ((mae_baseline - mae_modelo) / mae_baseline) * 100
-    return max(0.0, float(mejora))
+    mejora = ((mae_baseline - mae_modelo) / mae_baseline) * 100.0
+    return float(mejora)
 
 def generar_pronostico_real(df_hist: pd.DataFrame, df_cartera: pd.DataFrame = None, dias_horizonte: int = 30, escenario: str = "Base", saldo_inicial: float = None):
     """
     Genera el pronóstico de flujo de efectivo combinando la estacionalidad semanal, los factores de escenario,
     el saldo inicial dinámico y la cartera de CxC/CxP ponderada por su probabilidad de cobro/pago.
     """
-    if df_hist.empty:
+    if df_hist is None or df_hist.empty:
         fechas_base = pd.date_range(start=pd.Timestamp.today(), periods=dias_horizonte, freq='D')
         df_proy = pd.DataFrame({
             'ds': fechas_base,
@@ -74,16 +85,17 @@ def generar_pronostico_real(df_hist: pd.DataFrame, df_cartera: pd.DataFrame = No
             'Flujo_Neto': [6000.0] * dias_horizonte,
             'Saldo_Acumulado': [6000.0 * (i + 1) for i in range(dias_horizonte)]
         })
-        return df_proy, df_hist
+        return df_proy, pd.DataFrame(columns=['ds', 'Ingresos', 'Egresos'])
 
     df_clean = df_hist.sort_values('ds').copy()
+    df_clean['ds'] = pd.to_datetime(df_clean['ds'])
     
     # Determinar saldo inicial dinámico
     if saldo_inicial is None:
         neto_hist = df_clean['Ingresos'] - df_clean['Egresos']
-        saldo_base = neto_hist.sum()
+        saldo_base = float(neto_hist.sum())
     else:
-        saldo_base = saldo_inicial
+        saldo_base = float(saldo_inicial)
 
     df_clean['dayofweek'] = df_clean['ds'].dt.dayofweek
     avg_rev = df_clean.groupby('dayofweek')['Ingresos'].mean().to_dict()
@@ -107,8 +119,8 @@ def generar_pronostico_real(df_hist: pd.DataFrame, df_cartera: pd.DataFrame = No
         egr_est = avg_exp.get(dow, 7000.0) * f_exp
         proyecciones.append({
             'ds': f,
-            'Ingresos': ing_est,
-            'Egresos': egr_est
+            'Ingresos': float(ing_est),
+            'Egresos': float(egr_est)
         })
 
     df_proy = pd.DataFrame(proyecciones)

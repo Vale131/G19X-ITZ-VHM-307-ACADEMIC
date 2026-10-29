@@ -130,8 +130,10 @@ else:
             df_historico_db, df_cartera_db, dias_horizonte=horizonte_sel, escenario=escenario_sel
         )
         s_inicial_global = df_proy_global['Saldo_Acumulado'].iloc[0] if not df_proy_global.empty else 0
+        
+        # Simulación Monte Carlo basada en la proyección con escenario y cartera
         res_mc_global = ejecutar_simulacion_monte_carlo(
-            df_historico_db, saldo_inicial=s_inicial_global, dias_simulacion=horizonte_sel, num_simulaciones=1000
+            df_proy_global, saldo_inicial=s_inicial_global, num_simulaciones=1000
         )
 
         try:
@@ -209,12 +211,13 @@ else:
                 st.markdown("##### **Precisión del Modelo Predictivo (MAE / MAPE / Baseline)**")
                 st.caption(f"Validación mediante Holdout sobre datos históricos reales: *{metricas_err.get('status', 'Calibrado')}*")
                 
-                # Cálculo de la mejora frente al promedio simple (Baseline)
+                # Llamada corregida a calcular_mejora_vs_baseline con 1 solo argumento
                 try:
-                    mejora_bs = calcular_mejora_vs_baseline(df_historico_db, df_proy)
+                    mejora_bs = calcular_mejora_vs_baseline(df_historico_db)
                     str_mejora = f"{mejora_bs:+.1f}%"
-                except Exception:
+                except Exception as e:
                     str_mejora = "N/D"
+                    st.caption(f"No se pudo calcular la línea base: {e}")
 
                 m_a, m_b, m_c = st.columns(3)
                 with m_a:
@@ -294,7 +297,7 @@ else:
     elif "Modelado Estocástico & VaR" in menu_opcion:
         st.subheader(f"Simulación Estocástica de Riesgo Financiero (Monte Carlo a {horizonte_sel} días)")
         res_mc = ejecutar_simulacion_monte_carlo(
-            df_historico_db, saldo_inicial=s_inicial_global, dias_simulacion=horizonte_sel
+            df_proy_global, saldo_inicial=s_inicial_global, num_simulaciones=1000
         )
         
         # Tarjetas de Riesgo VaR

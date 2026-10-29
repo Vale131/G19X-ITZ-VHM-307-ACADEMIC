@@ -76,3 +76,12 @@ def test_calculo_metricas_error_holdout():
     assert "mape" in metricas
     assert metricas["mae"] >= 0
     assert metricas["mape"] >= 0
+
+def test_modelo_le_gana_al_promedio_con_estacionalidad():
+    # Serie sintética de 8 semanas (56 días) con un pico fuerte los lunes
+    fechas = pd.date_range(start='2026-01-05', periods=56, freq='D')
+    ingresos = [20000.0 if f.dayofweek == 0 else 5000.0 for f in fechas]
+    df = pd.DataFrame({'ds': fechas, 'Ingresos': ingresos, 'Egresos': [3000.0] * 56})
+
+    mejora = calcular_mejora_vs_baseline(df)
+    assert mejora > 0
