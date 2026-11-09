@@ -8,11 +8,3 @@ openpyxl>=3.1.2
 bcrypt>=4.1.2
 
 
-streamlit
-pandas
-numpy
-plotly
-openpyxl
-bcrypt
-python-dotenv
-pytest

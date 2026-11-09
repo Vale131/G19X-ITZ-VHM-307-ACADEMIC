@@ -183,7 +183,7 @@ else:
             df_historico_db, df_cartera_db, dias_horizonte=horizonte_sel, escenario=escenario_sel
         )
         
-        # Evaluación del modelo
+        # Evaluación del modelo y cálculo preciso de Baseline / Métricas (Corte 6)
         metricas_err = calcular_metricas_error(df_historico_db)
 
         tot_rev = df_proy['Ingresos'].sum()
@@ -211,21 +211,33 @@ else:
                 st.markdown("##### **Precisión del Modelo Predictivo (MAE / MAPE / Baseline)**")
                 st.caption(f"Validación mediante Holdout sobre datos históricos reales: *{metricas_err.get('status', 'Calibrado')}*")
                 
-                # Llamada corregida a calcular_mejora_vs_baseline con 1 solo argumento
+                # Cálculo flexible de mejora porcentual real frente al Baseline
                 try:
-                    mejora_bs = calcular_mejora_vs_baseline(df_historico_db)
-                    str_mejora = f"{mejora_bs:+.1f}%"
+                    res_baseline = calcular_mejora_vs_baseline(df_historico_db)
+                    if isinstance(res_baseline, dict):
+                        mejora_val = res_baseline.get('mejora_vs_baseline_pct', res_baseline.get('mejora_pct', 0.0))
+                        mae_base = res_baseline.get('mae_baseline', 0.0)
+                        str_mejora = f"{mejora_val:+.2f}%"
+                        delta_text = f"Baseline MAE: ${mae_base:,.2f}" if mae_base > 0 else "Mejora vs. Promedio Simple"
+                    else:
+                        mejora_val = float(res_baseline)
+                        str_mejora = f"{mejora_val:+.2f}%"
+                        delta_text = "vs. Promedio Simple Baseline"
                 except Exception as e:
                     str_mejora = "N/D"
+                    delta_text = "No disponible"
                     st.caption(f"No se pudo calcular la línea base: {e}")
+
+                mae_val = metricas_err.get('mae', 0.0)
+                mape_val = metricas_err.get('mape', 0.0)
 
                 m_a, m_b, m_c = st.columns(3)
                 with m_a:
-                    st.metric(label="MAE (Holdout 14d)", value=f"${metricas_err['mae']:,.2f}")
+                    st.metric(label="MAE (Holdout)", value=f"${mae_val:,.2f}")
                 with m_b:
-                    st.metric(label="MAPE (Error %)", value=f"{metricas_err['mape']:.2f}%")
+                    st.metric(label="MAPE (Error %)", value=f"{mape_val:.2f}%")
                 with m_c:
-                    st.metric(label="vs. Baseline", value=str_mejora, help="Porcentaje de mejora del modelo estacional frente al promedio simple")
+                    st.metric(label="vs. Baseline", value=str_mejora, delta=delta_text, help="Porcentaje de mejora real del modelo frente a la media simple baseline")
 
         with c_acc2:
             with st.container(border=True):
