@@ -1,6 +1,10 @@
 import streamlit as st
 import pandas as pd
-from modules.database import obtener_cartera_db, guardar_cartera_db
+from modules.database import (
+    obtener_cartera_db, 
+    insertar_compromiso_cartera, 
+    actualizar_estatus_cartera
+)
 
 def render_modulo_cartera():
     st.subheader("Capital de Trabajo & Cartera Operativa (CxC / CxP)")
@@ -8,34 +12,42 @@ def render_modulo_cartera():
 
     df_cartera = obtener_cartera_db()
 
-    # Garantizar que la columna 'id' siempre exista en el DataFrame
-    if 'id' not in df_cartera.columns:
-        if not df_cartera.empty:
-            df_cartera.insert(0, 'id', range(1, len(df_cartera) + 1))
-        else:
-            df_cartera = pd.DataFrame(columns=['id', 'tipo', 'cliente_proveedor', 'monto', 'fecha_vencimiento', 'probabilidad', 'estatus'])
-
     tab_ver, tab_agregar = st.tabs(["📋 Cartera Registrada", "➕ Agregar Compromiso"])
 
     with tab_ver:
         if not df_cartera.empty:
-            st.dataframe(df_cartera, width="stretch", hide_index=True)
+            # Formatear la columna de probabilidad para mejor visualización en pantalla
+            df_display = df_cartera.copy()
+            if 'probabilidad' in df_display.columns:
+                df_display['probabilidad_pct'] = (df_display['probabilidad'] * 100).round(1).astype(str) + '%'
             
+            st.dataframe(df_display, width="stretch", hide_index=True)
+            
+            st.markdown("##### **Actualización de Estatus**")
             c_id, c_est, c_btn = st.columns([2, 2, 2])
+            
             with c_id:
-                reg_id = st.number_input("ID del Registro a actualizar", min_value=1, step=1)
+                ids_disponibles = df_cartera['id'].tolist() if 'id' in df_cartera.columns else []
+                if ids_disponibles:
+                    reg_id = st.selectbox("ID del Registro a actualizar", ids_disponibles, key="sb_id_cartera")
+                else:
+                    reg_id = st.number_input("ID del Registro a actualizar", min_value=1, step=1, key="num_id_cartera")
+                    
             with c_est:
-                nuevo_estatus = st.selectbox("Nuevo Estatus", ["Pendiente", "Pagado", "Cancelado"])
+                nuevo_estatus = st.selectbox("Nuevo Estatus", ["Pendiente", "Pagado", "Cancelado"], key="sb_estatus_cartera")
+                
             with c_btn:
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("Actualizar Estatus"):
+                if st.button("Actualizar Estatus", width="stretch"):
                     if reg_id in df_cartera['id'].values:
-                        df_cartera.loc[df_cartera['id'] == reg_id, 'estatus'] = nuevo_estatus
-                        guardar_cartera_db(df_cartera)
-                        st.success(f"Registro #{reg_id} actualizado a '{nuevo_estatus}'.")
-                        st.rerun()
+                        ok = actualizar_estatus_cartera(int(reg_id), nuevo_estatus)
+                        if ok:
+                            st.success(f"Registro #{reg_id} actualizado a '{nuevo_estatus}'.")
+                            st.rerun()
+                        else:
+                            st.error("Ocurrió un error al actualizar la base de datos.")
                     else:
-                        st.error("ID no encontrado.")
+                        st.error("El ID seleccionado no existe en la cartera.")
         else:
             st.info("No hay registros en la cartera.")
 
@@ -56,26 +68,19 @@ def render_modulo_cartera():
 
             if btn_guardar:
                 if cliente_prov.strip():
-                    nuevo_reg = pd.DataFrame([{
-                        'tipo': tipo_code,
-                        'cliente_proveedor': cliente_prov.strip(),
-                        'monto': float(monto),
-                        'fecha_vencimiento': str(fecha_venc),
-                        'probabilidad': float(prob / 100.0),
-                        'estatus': estatus
-                    }])
-                    
-                    df_unido = pd.concat([df_cartera, nuevo_reg], ignore_index=True)
-                    
-                    # Asignación incondicional de ID para evitar pérdida de columna
-                    df_unido['id'] = range(1, len(df_unido) + 1)
-                    
-                    # Reordenar columnas para mantener 'id' al inicio
-                    cols = ['id'] + [c for c in df_unido.columns if c != 'id']
-                    df_unido = df_unido[cols]
-                    
-                    guardar_cartera_db(df_unido)
-                    st.success("Compromiso registrado correctamente en la cartera.")
-                    st.rerun()
+                    prob_float = float(prob / 100.0)
+                    ok = insertar_compromiso_cartera(
+                        tipo=tipo_code,
+                        cliente_proveedor=cliente_prov.strip(),
+                        monto=float(monto),
+                        fecha_vencimiento=str(fecha_venc),
+                        probabilidad=prob_float,
+                        estatus=estatus
+                    )
+                    if ok:
+                        st.success("Compromiso registrado correctamente en la cartera.")
+                        st.rerun()
+                    else:
+                        st.error("No se pudo guardar el registro en la base de datos.")
                 else:
-                    st.warning("Por favor especifica la descripción.")
+                    st.warning("Por favor especifica la descripción del cliente o proveedor.")

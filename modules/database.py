@@ -106,7 +106,7 @@ def autenticar_usuario(email: str, password_plain: str):
     if row:
         user_id, u_email, u_pass_hash, u_nombre, u_rol, u_estatus = row
         
-        # 1. Se valida PRIMERO la contraseña para evitar enumeración de usuarios
+        # Validación prioritaria de contraseña para evitar enumeración
         if verificar_password(password_plain, u_pass_hash):
             if u_estatus == "Inactivo":
                 return {"error": "El usuario se encuentra inactivo. Contacte al administrador."}
@@ -136,14 +136,12 @@ def registrar_usuario(email: str, password_plain: str, nombre: str, rol: str, es
         return False, "El correo electrónico ya se encuentra registrado."
 
 def actualizar_usuario(user_id: int, email: str, nombre: str, rol: str, estatus: str, nueva_password: str = None):
-    """Actualiza la información ordenando de forma exacta las columnas y la tupla de parámetros."""
+    """Actualiza la información del usuario en la base de datos."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
         if nueva_password and nueva_password.strip():
             pass_hashed = hash_password(nueva_password)
-            # ORDEN DE COLUMNAS:  email=?, nombre=?, rol=?, estatus=?, password=?  WHERE id=?
-            # TUPLA DE VALORES:   (email,   nombre,   rol,   estatus,   pass_hashed, user_id)
             cursor.execute("""
                 UPDATE usuarios
                 SET email = ?, nombre = ?, rol = ?, estatus = ?, password = ?
@@ -185,9 +183,18 @@ def obtener_usuarios_db():
     return df
 
 def guardar_historico_db(df):
+    """Guarda o actualiza el histórico de flujo manteniendo el esquema de la tabla."""
     conn = get_connection()
-    df.to_sql('historico_flujo', conn, if_exists='replace', index=False)
-    conn.close()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM historico_flujo")
+        conn.commit()
+        df.to_sql('historico_flujo', conn, if_exists='append', index=False)
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 def obtener_historico_db():
     conn = get_connection()
@@ -209,9 +216,42 @@ def obtener_cartera_db():
     return df
 
 def guardar_cartera_db(df):
+    """Guarda o actualiza registros de cartera mediante INSERT / UPDATE directos (UPSERT) sin borrar la estructura."""
+    if df.empty:
+        return
     conn = get_connection()
-    df.to_sql('cartera', conn, if_exists='replace', index=False)
-    conn.close()
+    cursor = conn.cursor()
+    try:
+        for _, row in df.iterrows():
+            reg_id = row.get('id')
+            prob = row.get('probabilidad', 1.0)
+            prob = 1.0 if pd.isna(prob) else float(prob)
+            estatus = row.get('estatus', 'Pendiente')
+            estatus = 'Pendiente' if pd.isna(estatus) else str(estatus)
+
+            if pd.notna(reg_id) and reg_id:
+                cursor.execute("""
+                    INSERT INTO cartera (id, tipo, cliente_proveedor, monto, fecha_vencimiento, probabilidad, estatus)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        tipo = excluded.tipo,
+                        cliente_proveedor = excluded.cliente_proveedor,
+                        monto = excluded.monto,
+                        fecha_vencimiento = excluded.fecha_vencimiento,
+                        probabilidad = excluded.probabilidad,
+                        estatus = excluded.estatus
+                """, (int(reg_id), str(row['tipo']), str(row['cliente_proveedor']), float(row['monto']), str(row['fecha_vencimiento']), prob, estatus))
+            else:
+                cursor.execute("""
+                    INSERT INTO cartera (tipo, cliente_proveedor, monto, fecha_vencimiento, probabilidad, estatus)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, (str(row['tipo']), str(row['cliente_proveedor']), float(row['monto']), str(row['fecha_vencimiento']), prob, estatus))
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise e
+    finally:
+        conn.close()
 
 def insertar_compromiso_cartera(tipo: str, cliente_proveedor: str, monto: float, fecha_vencimiento: str, probabilidad: float, estatus: str = 'Pendiente') -> bool:
     """Inserta un registro individual en la tabla cartera usando SQL directo."""
@@ -229,8 +269,25 @@ def insertar_compromiso_cartera(tipo: str, cliente_proveedor: str, monto: float,
         conn.close()
         return False
 
+def actualizar_compromiso_cartera(reg_id: int, tipo: str, cliente_proveedor: str, monto: float, fecha_vencimiento: str, probabilidad: float, estatus: str) -> bool:
+    """Actualiza todos los campos de un registro específico en la tabla cartera mediante UPDATE directo."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE cartera
+            SET tipo = ?, cliente_proveedor = ?, monto = ?, fecha_vencimiento = ?, probabilidad = ?, estatus = ?
+            WHERE id = ?
+        """, (tipo, cliente_proveedor, monto, fecha_vencimiento, probabilidad, estatus, reg_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        conn.close()
+        return False
+
 def actualizar_estatus_cartera(reg_id: int, nuevo_estatus: str) -> bool:
-    """Actualiza unicamente el estatus de una fila en la tabla cartera por su ID."""
+    """Actualiza únicamente el estatus de una fila en la tabla cartera por su ID."""
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -239,6 +296,19 @@ def actualizar_estatus_cartera(reg_id: int, nuevo_estatus: str) -> bool:
             SET estatus = ?
             WHERE id = ?
         """, (nuevo_estatus, reg_id))
+        conn.commit()
+        conn.close()
+        return True
+    except Exception:
+        conn.close()
+        return False
+
+def eliminar_compromiso_cartera(reg_id: int) -> bool:
+    """Elimina un registro específico de la tabla cartera por su ID."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM cartera WHERE id = ?", (reg_id,))
         conn.commit()
         conn.close()
         return True

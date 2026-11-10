@@ -46,7 +46,7 @@ else:
     df_historico_db = obtener_historico_db()
     df_cartera_db = obtener_cartera_db()
 
-    # AUTO-CARGA DE DATOS DE PRUEBA SI LA BD ESTÁ VACÍA
+    # Auto-carga de datos de prueba si la BD está vacía
     if df_historico_db.empty and os.path.exists("data/sample_flujo.csv"):
         try:
             df_sample = pd.read_csv("data/sample_flujo.csv")
@@ -183,7 +183,7 @@ else:
             df_historico_db, df_cartera_db, dias_horizonte=horizonte_sel, escenario=escenario_sel
         )
         
-        # Evaluación del modelo y cálculo preciso de Baseline / Métricas (Corte 6)
+        # Evaluación del modelo y cálculo preciso de Baseline / Métricas
         metricas_err = calcular_metricas_error(df_historico_db)
 
         tot_rev = df_proy['Ingresos'].sum()
@@ -204,14 +204,13 @@ else:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # SECCIÓN DE PRECISIÓN Y EVALUACIÓN DEL MODELO CON COMPARACIÓN BASELINE
+        # Sección de Precisión y Evaluación del Modelo con Comparación Baseline
         c_acc1, c_acc2 = st.columns([1, 1])
         with c_acc1:
             with st.container(border=True):
                 st.markdown("##### **Precisión del Modelo Predictivo (MAE / MAPE / Baseline)**")
                 st.caption(f"Validación mediante Holdout sobre datos históricos reales: *{metricas_err.get('status', 'Calibrado')}*")
                 
-                # Cálculo flexible de mejora porcentual real frente al Baseline
                 try:
                     res_baseline = calcular_mejora_vs_baseline(df_historico_db)
                     if isinstance(res_baseline, dict):
@@ -312,7 +311,7 @@ else:
             df_proy_global, saldo_inicial=s_inicial_global, num_simulaciones=1000
         )
         
-        # Tarjetas de Riesgo VaR
+        # Tarjetas de Riesgo VaR (clave prob_deficit unificada)
         k_v1, k_v2, k_v3 = st.columns(3)
         with k_v1:
             st.metric("Value at Risk (VaR 95%)", f"${res_mc.get('var_95', 0):,.2f}")
