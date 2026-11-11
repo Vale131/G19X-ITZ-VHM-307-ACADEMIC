@@ -36,14 +36,19 @@ def calcular_metricas_error(df_hist: pd.DataFrame):
         "status": "Evaluación basada en Holdout (14 días)"
     }
 
-def calcular_mejora_vs_baseline(df_hist: pd.DataFrame, dias_holdout: int = 14) -> float:
+def calcular_mejora_vs_baseline(df_hist: pd.DataFrame, dias_holdout: int = 14):
     """
     Compara la precisión (MAE) del modelo estacional diario frente a un modelo Baseline
     de promedio simple global sobre un conjunto de prueba (Holdout de 14 días).
-    Acepta únicamente el DataFrame histórico.
+    Retorna un diccionario completo para compatibilidad con las métricas del Cockpit.
     """
     if df_hist is None or df_hist.empty or len(df_hist) < (dias_holdout + 7):
-        return 0.0
+        return {
+            "mejora_vs_baseline_pct": 0.0,
+            "mae_baseline": 0.0,
+            "mae_modelo": 0.0,
+            "status": "Insuficientes datos"
+        }
 
     df_clean = df_hist.sort_values('ds').copy()
     df_clean['ds'] = pd.to_datetime(df_clean['ds'])
@@ -55,7 +60,7 @@ def calcular_mejora_vs_baseline(df_hist: pd.DataFrame, dias_holdout: int = 14) -
 
     # 1. Baseline: Promedio simple global del flujo neto
     promedio_baseline = train['Flujo_Neto'].mean()
-    mae_baseline = np.mean(np.abs(test['Flujo_Neto'] - promedio_baseline))
+    mae_baseline = float(np.mean(np.abs(test['Flujo_Neto'] - promedio_baseline)))
 
     # 2. Modelo Estacional: Promedio por día de la semana
     train['dayofweek'] = train['ds'].dt.dayofweek
@@ -63,13 +68,19 @@ def calcular_mejora_vs_baseline(df_hist: pd.DataFrame, dias_holdout: int = 14) -
 
     test['dayofweek'] = test['ds'].dt.dayofweek
     test['pred_estacional'] = test['dayofweek'].map(avg_dow).fillna(promedio_baseline)
-    mae_modelo = np.mean(np.abs(test['Flujo_Neto'] - test['pred_estacional']))
+    mae_modelo = float(np.mean(np.abs(test['Flujo_Neto'] - test['pred_estacional'])))
 
     if mae_baseline == 0:
-        return 0.0
+        mejora = 0.0
+    else:
+        mejora = float(((mae_baseline - mae_modelo) / mae_baseline) * 100.0)
 
-    mejora = ((mae_baseline - mae_modelo) / mae_baseline) * 100.0
-    return float(mejora)
+    return {
+        "mejora_vs_baseline_pct": mejora,
+        "mae_baseline": mae_baseline,
+        "mae_modelo": mae_modelo,
+        "status": "OK"
+    }
 
 def generar_pronostico_real(df_hist: pd.DataFrame, df_cartera: pd.DataFrame = None, dias_horizonte: int = 30, escenario: str = "Base", saldo_inicial: float = None):
     """
@@ -125,7 +136,7 @@ def generar_pronostico_real(df_hist: pd.DataFrame, df_cartera: pd.DataFrame = No
 
     df_proy = pd.DataFrame(proyecciones)
 
-    # INTEGRACIÓN UNIFICADA DE CARTERA PONDERADA POR PROBABILIDAD
+    # Integración unificada de cartera ponderada por probabilidad
     if df_cartera is not None and not df_cartera.empty and 'fecha_vencimiento' in df_cartera.columns:
         df_cartera_clean = df_cartera.copy()
         df_cartera_clean['fecha_vencimiento'] = pd.to_datetime(df_cartera_clean['fecha_vencimiento'], errors='coerce')

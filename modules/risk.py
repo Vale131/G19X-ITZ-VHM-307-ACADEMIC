@@ -28,14 +28,24 @@ def ejecutar_simulacion_monte_carlo(df_proyeccion: pd.DataFrame, saldo_inicial: 
         flujos_base = np.zeros(len(df_proyeccion))
 
     dias = len(flujos_base)
-    volatilidad = np.std(flujos_base) if len(flujos_base) > 1 and np.std(flujos_base) > 0 else 1000.0
+    if dias == 0:
+        return {
+            "var_95": 0.0,
+            "var_99": 0.0,
+            "prob_deficit": 0.0,
+            "saldo_final_esperado": 0.0,
+            "saldos_finales": []
+        }
+
+    std_flujo = float(np.std(flujos_base)) if len(flujos_base) > 1 else 0.0
+    volatilidad = std_flujo if std_flujo > 0 else 1000.0
 
     np.random.seed(42)  # Semilla fija para reproducibilidad técnica
     ruido_estocastico = np.random.normal(0, volatilidad, (num_simulaciones, dias))
     
     # Trayectorias = Flujo Neto proyectado + Perturbaciones estocásticas
     trayectorias_flujo = flujos_base + ruido_estocastico
-    saldos_acumulados = saldo_inicial + np.cumsum(trayectorias_flujo, axis=1)
+    saldos_acumulados = float(saldo_inicial) + np.cumsum(trayectorias_flujo, axis=1)
     saldos_finales = saldos_acumulados[:, -1]
 
     saldo_final_esperado = float(np.mean(saldos_finales))
