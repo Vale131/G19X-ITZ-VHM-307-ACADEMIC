@@ -3,7 +3,7 @@
 **Sistema Predictivo de Flujo de Efectivo & Tesorería Ejecutiva**  
 **Estándar Académico:** `G19X-ITZ-VHM-307-ACADEMIC`  
 **Repositorio Oficial:** `Vale131/G19X-ITZ-VHM-307-ACADEMIC`  
-**Versión de Producción:** v4.2 (Corte 7 Final) · Noviembre 2026  
+**Versión de Producción:** v4.2 · Noviembre 2026  
 
 ---
 
