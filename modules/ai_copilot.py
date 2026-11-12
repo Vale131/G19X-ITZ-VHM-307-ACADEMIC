@@ -2,7 +2,7 @@ import streamlit as st
 import os
 
 def responder_localmente(prompt: str, contexto_financiero: str) -> str:
-    """Generador de respuestas locales de respaldo en caso de desconexión."""
+    """Generador de respuestas locales de respaldo cuando no hay API Key configurada o sin conexión."""
     p = prompt.lower()
     
     if any(w in p for w in ["cómo funciona", "como funciona", "que hace", "qué hace", "guia", "instrucciones", "ayuda"]):
@@ -34,11 +34,11 @@ def render_copilot(contexto_financiero=""):
     st.subheader("Copiloto CFO - Asistente de Decisión Financiera (Google Gemini)")
     st.caption("Analiza escenarios de flujo de efectivo, riesgos de liquidez y estrategias de optimización.")
 
-    api_key_env = os.getenv("OPENAI_API_KEY", "")
+    api_key_env = os.getenv("GEMINI_API_KEY") or os.getenv("OPENAI_API_KEY", "")
     api_key_user = st.session_state.get("custom_api_key", api_key_env)
 
     if not api_key_user:
-        st.info("💡 **Conexión IA:** Ingresa tu API Key de Google AI Studio en la barra lateral en **CONFIGURACIÓN & IA**.")
+        st.info("💡 **Modo Local Activo:** La llave `GEMINI_API_KEY` (Google AI Studio) en `.env` es opcional; el asistente responde con diagnóstico financiero local.")
 
     if "copilot_messages" not in st.session_state:
         st.session_state.copilot_messages = [
@@ -57,7 +57,7 @@ def render_copilot(contexto_financiero=""):
         if api_key_user:
             try:
                 from openai import OpenAI
-                # Conexión al endpoint OpenAI-compatible de Google AI Studio
+                # Conexión al endpoint compatible de Google AI Studio (requiere llave de Google AI Studio, no OpenAI)
                 client = OpenAI(
                     api_key=api_key_user,
                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
@@ -72,7 +72,6 @@ def render_copilot(contexto_financiero=""):
                 )
                 respuesta = response.choices[0].message.content
             except Exception as e:
-                # Fallback suave en caso de error de red o clave inválida
                 respuesta = f"⚠️ *Aviso de conexión con Google AI Studio:* {str(e)}\n\n" + responder_localmente(prompt, contexto_financiero)
         else:
             respuesta = responder_localmente(prompt, contexto_financiero)
