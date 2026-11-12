@@ -26,6 +26,7 @@ from modules.forecasting import (
     calcular_mejora_vs_baseline,
     generar_pronostico_real
 )
+from modules.risk import ejecutar_simulacion_monte_carlo
 
 @pytest.fixture(autouse=True)
 def setup_and_teardown_test_db():
@@ -126,5 +127,20 @@ def test_cartera_ponderada_en_pronostico():
     
     fila_compromiso = df_proy[df_proy['ds'].dt.strftime('%Y-%m-%d') == fecha_compromiso]
     assert not fila_compromiso.empty
-    # Ingreso base estacional (10000) + monto ponderado CxC (20000 * 0.50 = 10000) = 20000
     assert float(fila_compromiso['Ingresos'].iloc[0]) == 20000.0
+
+def test_simulacion_monte_carlo_var_unificado():
+    """Verifica que Monte Carlo retorne las claves unificadas var_95, var_99 y prob_deficit."""
+    fechas = pd.date_range(start='2026-01-01', periods=30, freq='D')
+    df_proy = pd.DataFrame({
+        'ds': fechas,
+        'Ingresos': [12000.0] * 30,
+        'Egresos': [10000.0] * 30,
+        'Flujo_Neto': [2000.0] * 30
+    })
+
+    res = ejecutar_simulacion_monte_carlo(df_proy, saldo_inicial=50000.0, num_simulaciones=200)
+    assert "var_95" in res
+    assert "var_99" in res
+    assert "prob_deficit" in res
+    assert 0.0 <= res["prob_deficit"] <= 100.0

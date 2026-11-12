@@ -3,94 +3,85 @@
 **Sistema Predictivo de Flujo de Efectivo & Tesorería Ejecutiva**  
 **Estándar Académico:** `G19X-ITZ-VHM-307-ACADEMIC`  
 **Repositorio Oficial:** `Vale131/G19X-ITZ-VHM-307-ACADEMIC`  
-**Versión de Producción:** v3.2 / v4.2 Actualizada · Octubre 2026  
+**Versión de Producción:** v4.2 (Corte 7 Final) · Noviembre 2026  
 
 ---
 
-## 1. Resumen Ejecutivo y Alcance del Sistema
+## 1. Alcance del MVP
 
-El presente documento detalla la especificación técnica y de negocio del Producto Mínimo Viable (MVP) para el Sistema Predictivo de Flujo de Efectivo PluriOne, desarrollado bajo la clave académica `G19X-ITZ-VHM-307-ACADEMIC` y alojado en el repositorio GitHub `Vale131/G19X-ITZ-VHM-307-ACADEMIC`.
-
-El MVP resuelve la incertidumbre en la liquidez de caja mediante una arquitectura modular en Python y Streamlit, combinando la proyección estacional de transacciones, la integración probabilística de la cartera de Cuentas por Cobrar y Pagar (CxC/CxP), la cuantificación del riesgo mediante Monte Carlo (VaR) y la asistencia ejecutiva con Inteligencia Artificial.
+El Producto Mínimo Viable (MVP) de **PluriOne** entrega una aplicación web operativa en Python y Streamlit capaz de proyectar la liquidez empresarial, integrar compromisos de cuentas por cobrar y por pagar (CxC/CxP) ponderados por probabilidad, cuantificar el riesgo de déficit de caja mediante Monte Carlo (VaR) y generar reportes ejecutivos en Excel.
 
 ---
 
 ## 2. Objetivos del MVP e Indicadores de Logro
 
-Cada objetivo específico se respalda con un mecanismo de verificación directo en el código y en la interfaz:
-
-| Código | Objetivo Específico | Indicador de Logro y Mecanismo de Verificación |
+| Código | Objetivo Específico | Mecanismo de Verificación en el Sistema |
 | :--- | :--- | :--- |
-| **OE-1** | **Pronóstico de Liquidez** | Proyección de flujo neto a horizontes de 30 a 365 días combinando promedios por día de la semana y factores de escenario (Base, Optimista, Conservador). |
-| **OE-2** | **Validación Cuantitativa** | Autoevaluación del modelo mediante técnica Holdout sobre los últimos 14 días históricos, calculando MAE y MAPE en tiempo real. |
-| **OE-3** | **Análisis de Riesgo VaR** | Ejecución de 1,000 iteraciones estocásticas basadas en la volatilidad histórica, presentando en pantalla las tarjetas KPI de VaR 95%, VaR 99% y Probabilidad de Déficit (%). |
-| **OE-4** | **Integración de Cartera** | Esquema relacional unificado en `cartera` (`id`, `tipo`, `cliente_proveedor`, `monto`, `fecha_vencimiento`, `probabilidad`, `estatus`), donde cada compromiso altera la proyección multiplicando monto por probabilidad. |
-| **OE-5** | **Seguridad & RBAC** | Cifrado estricto con `bcrypt`, inicialización dinámica desde `ADMIN_INITIAL_PASSWORD` en `.env` sin claves hardcodeadas, y panel RBAC (CFO, Analista, Auditor). |
-| **OE-6** | **Exportación de Reportes** | Descarga consolidada de datos e indicadores a Excel (`.xlsx`) mediante `openpyxl` usando la clave corregida `prob_deficit`. |
+| **OE-1** | **Pronóstico de Liquidez** | Proyección diaria de 30 a 365 días por estacionalidad semanal y escenarios (*Base*, *Optimista*, *Conservador*), con auto-carga de `data/sample_flujo.csv` si la BD está vacía. |
+| **OE-2** | **Validación Holdout & Baseline** | Evaluación automática sobre los últimos 14 días reales desplegando **MAE**, **MAPE** y **% de mejora vs. Baseline** en el Cockpit Financiero. |
+| **OE-3** | **Análisis de Riesgo VaR** | Simulación de 1,000 trayectorias Monte Carlo mostrando tarjetas KPI de **VaR 95%**, **VaR 99%** y **Probabilidad de Déficit (`prob_deficit`)**. |
+| **OE-4** | **Persistencia Atómica de Cartera** | Gestión de CxC/CxP en SQLite mediante operaciones directas `INSERT` y `UPDATE` (`UPSERT`), conservando IDs reales y ponderando $\text{Monto} \times \text{Probabilidad}$. |
+| **OE-5** | **Seguridad & Control RBAC** | Hashing con `bcrypt`, inicialización vía `ADMIN_INITIAL_PASSWORD` en `.env` y administración de usuarios por rol (CFO, Analista, Auditor). |
+| **OE-6** | **Exportación Ejecutiva Excel** | Descarga de libro `.xlsx` consolidado con formato monetario/porcentual, pestañas de resumen VaR (`prob_deficit`), proyección, cartera e histórico. |
 
 ---
 
-## 3. Arquitectura de la Solución (Estructura de Módulos)
+## 3. Arquitectura Modular y Estructura del Repositorio
 
-El sistema está construido de forma modular para garantizar desacoplamiento y mantenibilidad:
+### 3.1 Estructura de Archivos (Raíz Consolidada)
 
-| Módulo / Archivo | Responsabilidad Principal | Tecnologías & Componentes |
+```text
+G19X-ITZ-VHM-307-ACADEMIC/
+├── .env.example            # Plantilla de variables (ADMIN_INITIAL_PASSWORD, GEMINI_API_KEY)
+├── .gitignore              # Exclusión de entorno virtual, .env y base de datos local
+├── README.md               # Guía de instalación, variables de entorno y primer acceso
+├── PRD.md                  # Product Requirement Document (Requerimientos y métricas)
+├── MVP.md                  # Especificación del Producto Mínimo Viable
+├── requirements.txt        # Dependencias del proyecto
+├── app.py                  # Orquestador principal Streamlit y vistas ejecutivas
+├── modules/                # Módulos desacoplados del núcleo
+│   ├── ai_copilot.py       # Copiloto CFO con Google AI Studio (opcional)
+│   ├── auth.py             # Autenticación y gestión de sesión
+│   ├── cxc_cxp.py          # Interfaz y operaciones directas de cartera CxC/CxP
+│   ├── database.py         # Persistencia SQLite (INSERT/UPDATE directos) y bcrypt
+│   ├── forecasting.py      # Motor de pronóstico, Holdout MAE/MAPE y Baseline
+│   ├── reports.py          # Generador de libros Excel con openpyxl
+│   ├── risk.py             # Simulación Monte Carlo (VaR 95%, VaR 99%, prob_deficit)
+│   ├── styles.py           # Estilos CSS corporativos y formato de gráficas
+│   └── support_agent.py    # Agente de soporte técnico integrado
+├── data/                   # Datos históricos iniciales
+│   └── sample_flujo.csv
+└── tests/                  # Suite de pruebas automatizadas
+    └── test_core.py
+```
+
+### 3.2 Responsabilidad por Módulo
+
+| Módulo | Responsabilidad Técnica | Dependencias Clave |
 | :--- | :--- | :--- |
-| `app.py` | Orquestador de interfaz, barra lateral, navegación multi-vista y panel de gestión de usuarios con buscador y edición de roles. | Streamlit (`width='stretch'`), Plotly |
-| `modules/database.py` | Gestión relacional SQLite (`flujo_efectivo.db`), esquemas unificados, cifrado `bcrypt` y lectura de `.env`. | SQLite3, `bcrypt`, `os`, `python-dotenv` |
-| `modules/forecasting.py` | Pronóstico por día de la semana, factores por escenario, Holdout 14d (MAE/MAPE), baseline y ponderación CxC/CxP. | Pandas, NumPy, Plotly |
-| `modules/cxc_cxp.py` | Gestión de cartera de cobros y pagos, alta de registros y actualización interactiva de estatus. | Streamlit, Pandas, Database |
-| `modules/risk.py` | Motor de simulación Monte Carlo (1,000 iteraciones), cálculo de VaR 95%, VaR 99% y Probabilidad de Déficit. | NumPy, Plotly Graph Objects |
-| `modules/reports.py` | Generación de libro Excel profesional con pestañas de histórico, proyección, cartera y métricas VaR. | `openpyxl`, Pandas |
-| `modules/auth.py` | Pantalla de login ejecutiva con diseño borgoña, verificación de hash `bcrypt` y control de sesiones. | Streamlit, `bcrypt` |
-| `modules/ai_copilot.py` & `support_agent.py` | Asistentes de Inteligencia Artificial (Copiloto CFO y PluriBot) con renderizado seguro sin inyección HTML. | Streamlit, OpenAI API |
+| `app.py` | Navegación multi-vista, Cockpit ejecutivo, precarga automática de datos y panel de administración de usuarios. | `streamlit`, `plotly`, `html` |
+| `modules/database.py` | Esquema SQLite (`usuarios`, `historico_flujo`, `cartera`), hashing `bcrypt` y operaciones SQL directas (`INSERT`/`UPDATE`). | `sqlite3`, `bcrypt`, `pandas` |
+| `modules/forecasting.py` | Cálculo de estacionalidad semanal, integración ponderada de cartera, validación Holdout (14d) y comparación vs. Baseline. | `pandas`, `numpy`, `plotly` |
+| `modules/cxc_cxp.py` | Alta y actualización de estatus de compromisos CxC/CxP conectada directamente a las funciones atómicas de BD. | `streamlit`, `pandas` |
+| `modules/risk.py` | Motor Monte Carlo con semilla reproducible (`seed=42`) y cálculo unificado de `var_95`, `var_99` y `prob_deficit`. | `numpy`, `plotly` |
+| `modules/reports.py` | Construcción en memoria de reportes `.xlsx` multi-pestaña con auto-ajuste de columnas y formatos numéricos. | `openpyxl`, `pandas` |
+| `modules/ai_copilot.py` | Asistente financiero impulsado opcionalmente por **Google AI Studio** (`GEMINI_API_KEY`). | `google-genai` / `streamlit` |
 
 ---
 
-## 4. Matriz de Cobertura y Cumplimiento de Retroalimentación
+## 4. Matriz de Consolidación Técnica (Corte 7)
 
-A continuación se resume la alineación del código respecto a la evaluación académica:
-
-1. **Unificación de Cartera:** Esquema unificado en `database.py`, `cxc_cxp.py` y `forecasting.py`. Cada factura de cobro/pago se multiplica por su probabilidad antes de impactar el flujo.
-2. **Documentación en Raíz:** `README.md` posicionado en la raíz con URL oficial `Vale131`, bloques de comandos formateados y corrección de tabla.
-3. **Documento PRD / MVP:** Creación formal de `docs/PRD.md` y `docs/MVP.md` con la especificación completa del producto.
-4. **Hardening de Seguridad:** Eliminada comparación en texto plano y fallback `"admin123"`. Se requiere `ADMIN_INITIAL_PASSWORD` en `.env`.
-5. **Tarjetas VaR & Excel:** Despliegue de tarjetas KPI en pantalla (VaR 95%, VaR 99%, % Déficit) y corrección de clave `prob_deficit` en Excel.
-6. **Cadencia de Versionado:** Commits descriptivos frecuentes en la rama `main` del repositorio remoto.
+1. **Consolidación Documental en Raíz:** Traslado y depuración de `PRD.md` y `MVP.md` a la raíz del repositorio junto con `README.md` actualizado (incluyendo sección de *Primer acceso* y variables de `.env.example`).
+2. **Persistencia Directa en Base de Datos:** Sustitución de `if_exists='replace'` por sentencias SQL directas `INSERT` y `UPDATE` (`UPSERT`) en `database.py` y `cxc_cxp.py`, manteniendo la integridad de llaves primarias y alineando el comportamiento con `pytest`.
+3. **Unificación de Riesgo VaR (`prob_deficit`):** Estandarización de la clave `prob_deficit` en `modules/risk.py`, las tarjetas KPI de `app.py` y la exportación Excel en `modules/reports.py`.
+4. **Limpieza de Llamada Baseline:** Simplificación de `calcular_mejora_vs_baseline(df_historico_db)` eliminando parámetros redundantes en `app.py` y retornando métricas estructuradas.
+5. **Seguridad sin Credenciales Hardcodeadas:** Inicialización dinámica de `admin@plurione.com` mediante `ADMIN_INITIAL_PASSWORD` y verificación estricta con `bcrypt`.
 
 ---
 
-## 5. Rigor Matemático, Riesgo & Criterios de Aceptación (Go/No-Go)
+## 5. Criterios de Aceptación (Go / No-Go)
 
-### 5.1 Protocolo Holdout y Baseline
-El sistema realiza una validación temporal reservando los últimos 14 días históricos. Muestra en el Cockpit Financiero las métricas **MAE** (Error Absoluto Medio) y **MAPE** (Error Porcentual Absoluto Medio), permitiendo auditar continuamente la precisión del modelo estacional.
-
-### 5.2 Simulación Monte Carlo y VaR
-A través del módulo `modules/risk.py`, el sistema ejecuta 1,000 iteraciones perturbando la proyección con la varianza histórica real para extraer:
-* **VaR 95%:** Máxima pérdida esperada con 95% de confianza.
-* **VaR 99%:** Saldo de caja extremo para calibración de la reserva de emergencia.
-* **Probabilidad de Déficit:** Porcentaje de trayectorias con saldo menor a $0.00.
-
-### 5.3 Criterios de Lanzamiento
-* Puntuación Holdout (MAE/MAPE) visible en el Cockpit Financiero.
-* Simulación Monte Carlo ejecutable en menos de 3 segundos reportando VaR 95%, VaR 99% y Probabilidad de Déficit.
-* Actualización de sintaxis de interfaz Streamlit a `width="stretch"` eliminando advertencias en consola.
-* Autenticación robusta probada con hash `bcrypt` sin fugas de información ni accesos no autorizados.
-
-# Especificación del Producto Mínimo Viable (MVP) — PluriOne
-
-## 6. Matriz de Comprobación de Objetivos MVP
-
-| Módulo | Función del MVP | Criterio de Aceptación & Método de Comprobación |
-| :--- | :--- | :--- |
-| **Ingesta de Datos** | Carga CSV & Muestra | Carga automática desde `data/sample_flujo.csv` cuando SQLite está vacía. Comprobado en `app.py`. |
-| **Proyección** | Modelo Estacional | Modelo por día de la semana que supera al promedio simple global. Comprobado vía `calcular_mejora_vs_baseline(df) > 0` en `tests/test_core.py`. |
-| **Capital de Trabajo** | Cartera Ponderada | Integración de CxC y CxP sumando/restando `monto * probabilidad`. Persistencia vía `INSERT`/`UPDATE` directos en SQL. Comprobado en `test_cartera_crud_operaciones_directas`. |
-| **Riesgo Estocástico** | Monte Carlo & VaR | Simulación basada en la proyección con escenario y cartera. Calcula VaR 95% y 99% como desviación respecto al saldo final esperado. Comprobado en `test_simulacion_monte_carlo_con_proyeccion`. |
-| **Exportación** | Reporte Excel | Descarga de archivo `.xlsx` consolidado con la clave `prob_deficit` mapeada correctamente. Comprobado vía `generar_reporte_excel()`. |
-
----
-
-## 7. Definición Unificada de Métricas de Riesgo
-* **Saldo Final Esperado:** Promedio de los saldos acumulados finales obtenidos en las $N$ trayectorias de la simulación de Monte Carlo.
-* **Value at Risk (VaR 95% / 99%):** Pérdida máxima esperada con un nivel de confianza del 95% o 99%, calculada como la diferencia entre el saldo final esperado y el percentil 5 (para 95%) o percentil 1 (para 99%) de la distribución simulada.
+* **Pruebas Unitarias:** Ejecución limpia de `python -m pytest tests/` sin errores de esquema ni discrepancias de claves.
+* **Despliegue de Métricas:** Visualización simultánea en el Cockpit de MAE, MAPE, mejora vs. Baseline, VaR 95%, VaR 99% y Probabilidad de Déficit (`prob_deficit`).
+* **Exportación Íntegra:** Descarga funcional del archivo `PluriOne_Reporte_<N>D.xlsx` con todas las hojas formateadas.
+* **Experiencia de Primer Acceso:** Arranque inmediato tras configurar `.env`, creación automática del usuario administrador y carga automática de `data/sample_flujo.csv`.

@@ -6,29 +6,30 @@
 
 ---
 
-##  Visión General del Proyecto
+## Visión General del Proyecto
 PluriOne es una suite modular de inteligencia financiera diseñada para proyectar liquidez a corto y mediano plazo, integrando compromisos operativos (CxC / CxP) ponderados por su probabilidad de cobro/pago y evaluando riesgos estocásticos con simulaciones Monte Carlo (VaR).
 
 ---
 
-##  Estructura del Repositorio
+## Estructura del Repositorio
 
 ```text
 G19X-ITZ-VHM-307-ACADEMIC/
 ├── .env.example            # Plantilla de variables de entorno
 ├── .gitignore              # Exclusión de archivos sensibles
 ├── README.md               # Documentación principal
+├── PRD.md                  # Product Requirement Document
+├── MVP.md                  # Especificación del Producto Mínimo Viable
 ├── requirements.txt        # Dependencias del proyecto
 ├── app.py                  # Orquestador principal Streamlit
-├── docs/                   # Documentación técnica
-│   ├── PRD.md              # Product Requirement Document
-│   └── MVP.md              # Especificación del Producto Mínimo Viable
 ├── modules/                # Módulos del núcleo del sistema
-│   ├── cxc_cxp.py
-│   ├── database.py
-│   ├── forecasting.py
-│   ├── reports.py
-│   └── risk.py
+│   ├── ai_copilot.py       # Copiloto financiero con Google AI Studio
+│   ├── auth.py             # Control de acceso y autenticación
+│   ├── cxc_cxp.py          # Gestión de cartera operativa
+│   ├── database.py         # Persistencia relacional SQLite
+│   ├── forecasting.py      # Motor de pronóstico y evaluación Baseline
+│   ├── reports.py          # Exportación ejecutiva a Excel
+│   └── risk.py             # Simulación Monte Carlo y cálculo VaR
 ├── data/                   # Datos de prueba
 │   └── sample_flujo.csv
 └── tests/                  # Pruebas unitarias
@@ -37,7 +38,7 @@ G19X-ITZ-VHM-307-ACADEMIC/
 
 ---
 
-##  Instalación y Configuración
+## Instalación y Configuración
 
 ```bash
 # 1. Clonar el repositorio
@@ -66,9 +67,30 @@ python -m streamlit run app.py
 
 ---
 
-##  Formato Requerido para Ingesta CSV
+## Variables de Entorno (`.env.example`)
 
-El archivo de histórico bancario debe contener la siguiente estructura:
+Antes de iniciar la aplicación por primera vez, copia `.env.example` a `.env` y configura sus variables:
+
+| Variable | Requerida | Descripción |
+| :--- | :---: | :--- |
+| **`ADMIN_INITIAL_PASSWORD`** | **Sí** | Define la contraseña inicial para crear la cuenta del administrador principal (`admin@plurione.com`) durante el primer arranque de la aplicación. No existen contraseñas hardcodeadas en el código fuente. |
+| **`GEMINI_API_KEY`** | **Opcional** | Llave de API obtenida desde **Google AI Studio** (no utiliza OpenAI), empleada por el copiloto financiero en `modules/ai_copilot.py` (línea 63). Si se deja vacía o no se define, el asistente conversacional mostrará un aviso de configuración, pero todos los módulos financieros, pronósticos, cartera y reportes Excel operarán con normalidad. |
+
+---
+
+## Primer Acceso
+
+1. **Arranque inicial:** Al ejecutar `python -m streamlit run app.py` por primera vez, la función `init_db()` inicializa la base de datos SQLite (`flujo_efectivo.db`) y crea automáticamente la cuenta de administrador utilizando la contraseña definida en `ADMIN_INITIAL_PASSWORD`.
+2. **Credenciales de inicio de sesión:**
+   * **Correo electrónico:** `admin@plurione.com`
+   * **Contraseña:** El valor configurado en `ADMIN_INITIAL_PASSWORD` dentro de tu archivo `.env`.
+3. **Carga automática de datos de prueba:** No es necesario cargar ningún archivo manual para explorar el sistema. Si la tabla histórica de flujo está vacía al iniciar sesión, la aplicación ingesta automáticamente `data/sample_flujo.csv` y habilita de inmediato todos los tableros, métricas de precisión y simulaciones VaR.
+
+---
+
+## Formato Requerido para Ingesta CSV
+
+Si deseas reemplazar los datos de prueba con un histórico propio, el archivo CSV debe contener la siguiente estructura:
 
 | Columna | Tipo de Dato | Descripción | Ejemplo |
 | :--- | :--- | :--- | :--- |
@@ -82,10 +104,10 @@ El archivo de histórico bancario debe contener la siguiente estructura:
 
 - **Hashing seguro:** Contraseñas protegidas mediante hash dinámico Bcrypt con generación de sal aleatoria (`gensalt`).
 - **Control de Acceso Basado en Roles (RBAC):** Director Financiero (CFO), Analista de Tesorería y Auditor de Riesgo.
-- **Credenciales iniciales:** Configuración de credenciales de acceso inicial vía variable de entorno `ADMIN_INITIAL_PASSWORD`.
+- **Credenciales iniciales:** Configuración aislada mediante la variable de entorno `ADMIN_INITIAL_PASSWORD`.
 
 ---
 
-##  Uso de IA
+## Uso de IA
 
-Se utilizaron asistentes de IA para el diseño de componentes visuales en Streamlit, optimización de consultas SQL parametrizadas y estructuración de pruebas automatizadas con pytest. Todos los módulos fueron revisados, probados y adaptados técnicamente. Mayor detalle disponible en `docs/PRD.md`.
+Se utilizaron asistentes de IA para el diseño de componentes visuales en Streamlit, optimización de consultas SQL parametrizadas y estructuración de pruebas automatizadas con `pytest`. Todos los módulos fueron revisados, probados y adaptados técnicamente. Mayor detalle disponible en `PRD.md`.
